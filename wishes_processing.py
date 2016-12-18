@@ -1,14 +1,13 @@
+#!/usr/local/bin/python3
+
 import csv
-from nltk import collocations
-from nltk import tokenize
-from nltk import pos_tag
-
-DST_COL = 6
-
-from collections import Counter
 import re
 
 from pymystem3 import Mystem
+
+DST_COL = 6
+
+
 
 matches = {}
 regexes = {}
@@ -156,58 +155,97 @@ class TagNames(object):
 
     NO_CHANGE_REQUIRED = "Ничего не менять"
 
+    TRADE_GENERAL = "Торговля"
+    ALLOW_TRADE = "Разрешить организованную торговлю"
+    FORBID_TRADE = "Запретить торговлю"
 
-c = 0
-ms = Mystem()
-with open("/Users/marina/Desktop/bstp/sennaya-2016-12-17.csv") as f:
-    reader = csv.reader(f, delimiter=",")
-    for line in reader:
-        value = line[DST_COL]
-        lemmas = " ".join([i for i in ms.lemmatize(value) if i.strip()])
+    PARKING_GENERAL = "Парковки"
 
-        hls = set()
-        for m in matches:
-            if regexes[m].search(lemmas):
-                hls.add(matches[m])
+    STREET_FOOD_GENERAL = "Уличная еда"
+    ALLOW_STREET_FOOD = "Организовать продажу уличной еды"
 
-        if "Ничего не менять" in hls:
-            hls = {"Ничего не менять"}
+    CAFE_GENERAL = "Кафе, рестораны"
+    ALLOW_CAFE = "Открыть качественные кафе"
 
-        if "Разрешить организованную торговлю" in hls or "Запретить торговлю" in hls:
-            hls.discard("Торговля")
-        if "Разрешить организованную торговлю" in hls and "Запретить торговлю" in hls:
-            hls.add("Торговля")
-            hls.remove("Разрешить организованную торговлю")
-            hls.remove("Запретить торговлю")
 
-        if "Парковки" in hls:
+
+class Postprocs(object):
+
+    @classmethod
+    def no_change_postproc(cls, hls):
+        if TagNames.NO_CHANGE_REQUIRED in hls:
+            hls.clear()
+            hls.add(TagNames.NO_CHANGE_REQUIRED)
+
+    @classmethod
+    def trade_postproc(cls, hls):
+        if TagNames.ALLOW_TRADE in hls or TagNames.FORBID_TRADE in hls:
+            hls.discard(TagNames.TRADE_GENERAL)
+        if TagNames.ALLOW_TRADE in hls and TagNames.FORBID_TRADE in hls:
+            hls.add(TagNames.TRADE_GENERAL)
+            hls.remove(TagNames.ALLOW_TRADE)
+            hls.remove(TagNames.FORBID_TRADE)
+
+    @classmethod
+    def parking_postproc(cls, hls):
+        if TagNames.PARKING_GENERAL in hls:
             additional_headlines = set()
             assign_headlines_parking(lemmas, additional_headlines)
             if additional_headlines:
-                hls.remove("Парковки")
-                hls |= {i.capitalize() for i in additional_headlines}
+                hls.remove(TagNames.PARKING_GENERAL)
+                hls.update({i.capitalize() for i in additional_headlines})
 
-        if "Уличная еда" in hls:
+    @classmethod
+    def street_food_postproc(cls, hls):
+        if TagNames.STREET_FOOD_GENERAL in hls:
             assign_headlines_food(lemmas, hls)
-            if "Организовать продажу уличной еды" in hls:
-                hls.remove("Уличная еда")
+            if TagNames.ALLOW_STREET_FOOD in hls:
+                hls.remove(TagNames.STREET_FOOD_GENERAL)
 
-        if "Кафе, рестораны" in hls:
+
+    @classmethod
+    def cafe_postproc(cls, hls):
+        if TagNames.CAFE_GENERAL in hls:
             assign_headlines_restaurants(lemmas, hls)
-            if "Открыть качественные кафе" in hls:
-                hls.discard("Кафе, рестораны")
+            if TagNames.ALLOW_CAFE in hls:
+                hls.discard(TagNames.CAFE_GENERAL)
 
-        # if hls & QUESTIONED:
-        if True:
+
+def iter_column(fn, col_number):
+    ms = Mystem()
+    with open(fn) as f:
+        reader = csv.reader(f, delimiter=",")
+        next(reader, None)
+        for line in reader:
+            if col_number > len(line) - 1:
+                continue
+            value = line[col_number].strip()
+            yield value, " ".join([i for i in ms.lemmatize(value) if i.strip()])
+
+
+if __name__ == "__main__":
+    postproc_seq = [
+        Postprocs.no_change_postproc,
+        Postprocs.trade_postproc,
+        Postprocs.parking_postproc,
+        Postprocs.street_food_postproc,
+        Postprocs.cafe_postproc,
+    ]
+
+    for value, lemmas in iter_column("/Users/marina/Desktop/bstp/sennaya-2016-12-17.csv", DST_COL):
+            hls = set()
+            for m in matches:
+                if regexes[m].search(lemmas):
+                    hls.add(matches[m])
+
+            for postproc in postproc_seq:
+                postproc(hls)
+
             print(value.strip())
-            # print(lemmas)
             print("Теги: ", "; ".join(hls))
-            # print()
-            c += 1
-
-        all_tags |= hls
+            all_tags |= hls
 
 
-import sys
-for i in sorted(all_tags):
-    print(i, file=sys.stderr)
+    import sys
+    for i in sorted(all_tags):
+        print(i, file=sys.stderr)
