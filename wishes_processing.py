@@ -7,8 +7,6 @@ from pymystem3 import Mystem
 
 DST_COL = 6
 
-
-
 matches = {}
 regexes = {}
 with open("wishes-dic-2016-12-12.csv") as kwf:
@@ -44,7 +42,6 @@ PARKING_TEMPLATES = {
 }
 
 
-
 def assign_headlines_parking(lemmas, hl_set):
     for parking_tmpl in PARKING_TEMPLATES:
         regex, label, func = parking_tmpl
@@ -53,7 +50,8 @@ def assign_headlines_parking(lemmas, hl_set):
             hl_set.add(func(m, label))
             break
     else:
-        if not ({pos(i) for i in lemmas.split()} - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
+        if not ({pos(i) for i in lemmas.split()} - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b",
+                                                                                                            lemmas):
             if not "вело" in lemmas:
                 hl_set.add("устроить парковку")
 
@@ -124,9 +122,24 @@ def assign_headlines_food(lemmas, additional_headlines):
 
 from keyword_extractor import pos
 
+class TagNames(object):
+    NO_CHANGE_REQUIRED = "Ничего не менять"
+
+    TRADE_GENERAL = "Торговля"
+    ALLOW_TRADE = "Разрешить организованную торговлю"
+    FORBID_TRADE = "Запретить торговлю"
+
+    PARKING_GENERAL = "Парковки"
+
+    STREET_FOOD_GENERAL = "Уличная еда"
+    ALLOW_STREET_FOOD = "Организовать продажу уличной еды"
+
+    CAFE_GENERAL = "Кафе, рестораны"
+    ALLOW_CAFE = "Открыть качественные кафе"
+
 
 def assign_headlines_restaurants(lemmas, additional_headlines):
-    approval_label = "Открыть качественные кафе"
+    approval_label = TagNames.ALLOW_CAFE
 
     regex = r"({})[^,().!]+?({})".format("|".join(APPROVAL_WORDS), "|".join(RESTAURANT_NAMES))
     if re.search(regex, lemmas):
@@ -146,39 +159,22 @@ QUESTIONED = {
     "Транспорт",
     "Переходы",
     "Лавки",
+    "?",
 }
 
 all_tags = set()
 
 
-class TagNames(object):
-
-    NO_CHANGE_REQUIRED = "Ничего не менять"
-
-    TRADE_GENERAL = "Торговля"
-    ALLOW_TRADE = "Разрешить организованную торговлю"
-    FORBID_TRADE = "Запретить торговлю"
-
-    PARKING_GENERAL = "Парковки"
-
-    STREET_FOOD_GENERAL = "Уличная еда"
-    ALLOW_STREET_FOOD = "Организовать продажу уличной еды"
-
-    CAFE_GENERAL = "Кафе, рестораны"
-    ALLOW_CAFE = "Открыть качественные кафе"
-
-
 
 class Postprocs(object):
-
     @classmethod
-    def no_change_postproc(cls, hls):
+    def no_change_postproc(cls, words, lemmas, hls):
         if TagNames.NO_CHANGE_REQUIRED in hls:
             hls.clear()
             hls.add(TagNames.NO_CHANGE_REQUIRED)
 
     @classmethod
-    def trade_postproc(cls, hls):
+    def trade_postproc(cls, words, lemmas, hls):
         if TagNames.ALLOW_TRADE in hls or TagNames.FORBID_TRADE in hls:
             hls.discard(TagNames.TRADE_GENERAL)
         if TagNames.ALLOW_TRADE in hls and TagNames.FORBID_TRADE in hls:
@@ -187,7 +183,7 @@ class Postprocs(object):
             hls.remove(TagNames.FORBID_TRADE)
 
     @classmethod
-    def parking_postproc(cls, hls):
+    def parking_postproc(cls, words, lemmas, hls):
         if TagNames.PARKING_GENERAL in hls:
             additional_headlines = set()
             assign_headlines_parking(lemmas, additional_headlines)
@@ -196,15 +192,14 @@ class Postprocs(object):
                 hls.update({i.capitalize() for i in additional_headlines})
 
     @classmethod
-    def street_food_postproc(cls, hls):
+    def street_food_postproc(cls, words, lemmas, hls):
         if TagNames.STREET_FOOD_GENERAL in hls:
             assign_headlines_food(lemmas, hls)
             if TagNames.ALLOW_STREET_FOOD in hls:
                 hls.remove(TagNames.STREET_FOOD_GENERAL)
 
-
     @classmethod
-    def cafe_postproc(cls, hls):
+    def cafe_postproc(cls, words, lemmas, hls):
         if TagNames.CAFE_GENERAL in hls:
             assign_headlines_restaurants(lemmas, hls)
             if TagNames.ALLOW_CAFE in hls:
@@ -220,7 +215,9 @@ def iter_column(fn, col_number):
             if col_number > len(line) - 1:
                 continue
             value = line[col_number].strip()
-            yield value, " ".join([i for i in ms.lemmatize(value) if i.strip()])
+            lemmas = [i for i in ms.lemmatize(value) if i.strip()]
+            parts_of_speech = [pos(i) for i in lemmas]
+            yield value, lemmas, parts_of_speech
 
 
 if __name__ == "__main__":
@@ -232,20 +229,44 @@ if __name__ == "__main__":
         Postprocs.cafe_postproc,
     ]
 
-    for value, lemmas in iter_column("/Users/marina/Desktop/bstp/sennaya-2016-12-17.csv", DST_COL):
-            hls = set()
-            for m in matches:
-                if regexes[m].search(lemmas):
-                    hls.add(matches[m])
+    results = []
 
-            for postproc in postproc_seq:
-                postproc(hls)
+    for value, lemmas_lst, parts_of_speech in iter_column("/Users/marina/Desktop/bstp/sennaya-2016-12-17.csv", DST_COL):
+        lemmas_text = " ".join(lemmas_lst)
+        hls = set()
+        for m in matches:
+            if regexes[m].search(lemmas_text):
+                hls.add(matches[m])
 
-            print(value.strip())
-            print("Теги: ", "; ".join(hls))
-            all_tags |= hls
+        for postproc in postproc_seq:
+            postproc(value, lemmas_text, hls)
 
+        results.append((value, hls))
+        all_tags |= hls
 
     import sys
+
     for i in sorted(all_tags):
         print(i, file=sys.stderr)
+
+    header_tagging = sorted(all_tags)
+    header = ["ID", "Исходный текст"] + header_tagging
+
+    with open("output_clear.csv", "w") as clear_file, open("output_questioned.csv", "w") as questioned_file, open("output_trash.csv", "w") as trash_file:
+        c_writer = csv.writer(clear_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
+        q_writer = csv.writer(questioned_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
+        t_writer = csv.writer(trash_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
+
+        # c_writer.writerow(header)
+        # q_writer.writerow(header)
+        # t_writer.writerow(header)
+
+        for num, (answer, tags) in enumerate(results):
+            if not tags or "?" in tags and len(tags) == 1:
+                active_writer = t_writer
+            elif tags & QUESTIONED:
+                active_writer = q_writer
+            else:
+                active_writer = c_writer
+            line = [str(num + 2), answer] + sorted(tags) + [""] * (len(header_tagging) - len(tags)) #["" if i not in tags else i for i in header_tagging]
+            active_writer.writerow(line)
