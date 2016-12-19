@@ -2,21 +2,9 @@
 
 import csv
 import re
-
+import os
+from keyword_extractor import pos
 from pymystem3 import Mystem
-
-DST_COL = 6
-
-matches = {}
-regexes = {}
-with open("wishes-dic-2016-12-12.csv") as kwf:
-    reader = csv.reader(kwf, delimiter=",")
-    for line in reader:
-        hl, *kws = line
-        for kw in kws:
-            if kw:
-                matches[kw] = hl
-                regexes[kw] = re.compile(r'\b{}\b'.format(kw))
 
 PARKING_TEMPLATES = {
     (r'\bподземный (стоянка|паркинг)\b', "устроить подземную парковку", lambda a, b: b),
@@ -98,8 +86,6 @@ SENTENCE_START = r'(?:((?:ларек|ларёк|киоск|будочка|маг
     "|".join(FOOD_NAMES))
 
 
-# print(SENTENCE_START)
-
 def assign_headlines_food(lemmas, additional_headlines):
     approval_label = "Организовать продажу уличной еды"
     for i in GOOD_FOOD_MARKERS:
@@ -118,8 +104,6 @@ def assign_headlines_food(lemmas, additional_headlines):
                                                                                                         lemmas):
         additional_headlines.add(approval_label)
 
-
-from keyword_extractor import pos
 
 class TagNames(object):
     NO_CHANGE_REQUIRED = "Ничего не менять"
@@ -161,9 +145,6 @@ QUESTIONED = {
     "Лавки",
     "?",
 }
-
-all_tags = set()
-
 
 
 class Postprocs(object):
@@ -214,7 +195,7 @@ class Postprocs(object):
                     if pos_tags[peak_index] not in ["PR", "A", "ADV", "S"]:
                         if peak_index == start_index - 1 and pos_tags[peak_index] is None:
                             peak_index -= 1
-                            continue # ignoring quotes
+                            continue  # ignoring quotes
                         return
                     if pos_tags[peak_index] == "PR":
                         hls.discard(TagNames.PEAK_GENERAL)
@@ -238,7 +219,26 @@ def iter_column(fn, col_number):
             yield value, lemmas, parts_of_speech
 
 
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description="A script classifying respondents' answers using a dictionary.")
+    parser.add_argument("csv", type=str, metavar="PATH", help="A path to a file to process.")
+    parser.add_argument("column", type=int, metavar="NUM", help="A number of column to process.")
+    parser.add_argument("dic", type=str, metavar="PATH", help="A path to a dictionary to use.")
+    parser.add_argument("-d", "--delimiter", type=str, default="\t", metavar="SYMBOL",
+                        help="A symbol to use as a delimiter in the output.")
+    parsed = parser.parse_args()
+    parsed.csv = os.path.expanduser(os.path.abspath(parsed.csv))
+    parsed.dic = os.path.expanduser(os.path.abspath(parsed.dic))
+    assert parsed.column >= 0
+    assert os.path.isfile(parsed.csv) and os.path.isfile(parsed.dic)
+    assert len(parsed.delimiter) == 1
+    return parsed
+
+
 if __name__ == "__main__":
+    args = parse_args()
+
     postproc_seq = [
         Postprocs.no_change_postproc,
         Postprocs.trade_postproc,
@@ -248,9 +248,21 @@ if __name__ == "__main__":
         Postprocs.peak_postproc
     ]
 
-    results = []
+    matches = {}
+    regexes = {}
+    with open(args.dic) as kwf:
+        reader = csv.reader(kwf, delimiter=",")
+        for line in reader:
+            hl, *kws = line
+            for kw in kws:
+                if kw:
+                    matches[kw] = hl
+                    regexes[kw] = re.compile(r'\b{}\b'.format(kw))
 
-    for value, lemmas_lst, parts_of_speech in iter_column("/Users/marina/Desktop/bstp/sennaya-2016-12-17.csv", DST_COL):
+    results = []
+    all_tags = set()
+
+    for value, lemmas_lst, parts_of_speech in iter_column(args.csv, args.column - 1):
         lemmas_text = " ".join(lemmas_lst)
         hls = set()
         for m in matches:
@@ -271,10 +283,11 @@ if __name__ == "__main__":
     header_tagging = sorted(all_tags)
     header = ["ID", "Исходный текст"] + header_tagging
 
-    with open("output_clear1.csv", "w") as clear_file, open("output_questioned1.csv", "w") as questioned_file, open("output_trashq.csv", "w") as trash_file:
-        c_writer = csv.writer(clear_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
-        q_writer = csv.writer(questioned_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
-        t_writer = csv.writer(trash_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
+    with open("output_clear1.csv", "w") as clear_file, open("output_questioned1.csv", "w") as questioned_file, open(
+            "output_trashq.csv", "w") as trash_file:
+        c_writer = csv.writer(clear_file, delimiter=args.delimiter, quoting=csv.QUOTE_MINIMAL)
+        q_writer = csv.writer(questioned_file, delimiter=args.delimiter, quoting=csv.QUOTE_MINIMAL)
+        t_writer = csv.writer(trash_file, delimiter=args.delimiter, quoting=csv.QUOTE_MINIMAL)
 
         # c_writer.writerow(header)
         # q_writer.writerow(header)
@@ -287,5 +300,6 @@ if __name__ == "__main__":
                 active_writer = q_writer
             else:
                 active_writer = c_writer
-            line = [str(num + 2), answer] + sorted(tags) + [""] * (len(header_tagging) - len(tags)) #["" if i not in tags else i for i in header_tagging]
+            line = [str(num + 2), answer] + sorted(tags) + [""] * (
+            len(header_tagging) - len(tags))  # ["" if i not in tags else i for i in header_tagging]
             active_writer.writerow(line)
