@@ -42,7 +42,7 @@ PARKING_TEMPLATES = {
 }
 
 
-def assign_headlines_parking(lemmas, hl_set):
+def assign_headlines_parking(lemmas, pos_tags, hl_set):
     for parking_tmpl in PARKING_TEMPLATES:
         regex, label, func = parking_tmpl
         m = re.search(regex, lemmas)
@@ -50,8 +50,7 @@ def assign_headlines_parking(lemmas, hl_set):
             hl_set.add(func(m, label))
             break
     else:
-        if not ({pos(i) for i in lemmas.split()} - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b",
-                                                                                                            lemmas):
+        if not (set(pos_tags) - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
             if not "вело" in lemmas:
                 hl_set.add("устроить парковку")
 
@@ -137,8 +136,10 @@ class TagNames(object):
     CAFE_GENERAL = "Кафе, рестораны"
     ALLOW_CAFE = "Открыть качественные кафе"
 
+    PEAK_GENERAL = 'ТК Пик'
 
-def assign_headlines_restaurants(lemmas, additional_headlines):
+
+def assign_headlines_restaurants(lemmas, pos_tags, additional_headlines):
     approval_label = TagNames.ALLOW_CAFE
 
     regex = r"({})[^,().!]+?({})".format("|".join(APPROVAL_WORDS), "|".join(RESTAURANT_NAMES))
@@ -146,8 +147,7 @@ def assign_headlines_restaurants(lemmas, additional_headlines):
         additional_headlines.add(approval_label)
         return
 
-    if not ({pos(i) for i in lemmas.split()} - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b",
-                                                                                                        lemmas):
+    if not (set(pos_tags) - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
         additional_headlines.add(approval_label)
 
 
@@ -168,13 +168,13 @@ all_tags = set()
 
 class Postprocs(object):
     @classmethod
-    def no_change_postproc(cls, words, lemmas, hls):
+    def no_change_postproc(cls, words, lemmas, pos_tags, hls):
         if TagNames.NO_CHANGE_REQUIRED in hls:
             hls.clear()
             hls.add(TagNames.NO_CHANGE_REQUIRED)
 
     @classmethod
-    def trade_postproc(cls, words, lemmas, hls):
+    def trade_postproc(cls, words, lemmas, pos_tags, hls):
         if TagNames.ALLOW_TRADE in hls or TagNames.FORBID_TRADE in hls:
             hls.discard(TagNames.TRADE_GENERAL)
         if TagNames.ALLOW_TRADE in hls and TagNames.FORBID_TRADE in hls:
@@ -183,27 +183,45 @@ class Postprocs(object):
             hls.remove(TagNames.FORBID_TRADE)
 
     @classmethod
-    def parking_postproc(cls, words, lemmas, hls):
+    def parking_postproc(cls, words, lemmas, pos_tags, hls):
         if TagNames.PARKING_GENERAL in hls:
             additional_headlines = set()
-            assign_headlines_parking(lemmas, additional_headlines)
+            assign_headlines_parking(lemmas, pos_tags, additional_headlines)
             if additional_headlines:
                 hls.remove(TagNames.PARKING_GENERAL)
                 hls.update({i.capitalize() for i in additional_headlines})
 
     @classmethod
-    def street_food_postproc(cls, words, lemmas, hls):
+    def street_food_postproc(cls, words, lemmas, pos_tags, hls):
         if TagNames.STREET_FOOD_GENERAL in hls:
             assign_headlines_food(lemmas, hls)
             if TagNames.ALLOW_STREET_FOOD in hls:
                 hls.remove(TagNames.STREET_FOOD_GENERAL)
 
     @classmethod
-    def cafe_postproc(cls, words, lemmas, hls):
+    def cafe_postproc(cls, words, lemmas, pos_tags, hls):
         if TagNames.CAFE_GENERAL in hls:
-            assign_headlines_restaurants(lemmas, hls)
+            assign_headlines_restaurants(lemmas, pos_tags, hls)
             if TagNames.ALLOW_CAFE in hls:
                 hls.discard(TagNames.CAFE_GENERAL)
+
+    @classmethod
+    def peak_postproc(cls, words, lemmas, pos_tags, hls):
+        if TagNames.PEAK_GENERAL in hls:
+            try:
+                start_index = peak_index = words.index("пик")
+                while peak_index >= 0:
+                    if pos_tags[peak_index] not in ["PR", "A", "ADV", "S"]:
+                        if peak_index == start_index - 1 and pos_tags[peak_index] is None:
+                            peak_index -= 1
+                            continue # ignoring quotes
+                        return
+                    if pos_tags[peak_index] == "PR":
+                        hls.discard(TagNames.PEAK_GENERAL)
+                        return
+                    peak_index -= 1
+            except ValueError:
+                pass
 
 
 def iter_column(fn, col_number):
@@ -227,6 +245,7 @@ if __name__ == "__main__":
         Postprocs.parking_postproc,
         Postprocs.street_food_postproc,
         Postprocs.cafe_postproc,
+        Postprocs.peak_postproc
     ]
 
     results = []
@@ -239,7 +258,7 @@ if __name__ == "__main__":
                 hls.add(matches[m])
 
         for postproc in postproc_seq:
-            postproc(value, lemmas_text, hls)
+            postproc(lemmas_lst, lemmas_text, parts_of_speech, hls)
 
         results.append((value, hls))
         all_tags |= hls
@@ -252,7 +271,7 @@ if __name__ == "__main__":
     header_tagging = sorted(all_tags)
     header = ["ID", "Исходный текст"] + header_tagging
 
-    with open("output_clear.csv", "w") as clear_file, open("output_questioned.csv", "w") as questioned_file, open("output_trash.csv", "w") as trash_file:
+    with open("output_clear1.csv", "w") as clear_file, open("output_questioned1.csv", "w") as questioned_file, open("output_trashq.csv", "w") as trash_file:
         c_writer = csv.writer(clear_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
         q_writer = csv.writer(questioned_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
         t_writer = csv.writer(trash_file, delimiter='±', quoting=csv.QUOTE_MINIMAL)
