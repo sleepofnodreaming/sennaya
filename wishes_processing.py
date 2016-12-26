@@ -3,7 +3,7 @@
 import csv
 import re
 import os
-from keyword_extractor import pos
+from generalling import pos
 from pymystem3 import Mystem
 
 PARKING_TEMPLATES = {

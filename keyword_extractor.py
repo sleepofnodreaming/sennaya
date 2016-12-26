@@ -1,16 +1,18 @@
 #!/usr/local/bin/python3
 
+import argparse
+import csv
+import os
+import re
+import sys
 from collections import Counter
+
+import nltk
 from nltk.collocations import *
 from nltk.text import TextCollection
 from pymystem3 import Mystem
 
-import argparse
-import csv
-import nltk
-import os
-import re
-import sys
+from generalling import pos
 
 GLOBAL_MYSTEM = Mystem()
 
@@ -41,20 +43,6 @@ def convert_to_working_text(token_list):
     if m:
         return m.group(1).strip().split()
     return token_list
-
-
-def pos(wd, analyzer=GLOBAL_MYSTEM):
-    analyses = analyzer.analyze(wd)
-    if not analyses:
-        return None
-    dic = analyses[0]
-    if "analysis" in dic and dic["analysis"]:
-        ana_dic = dic["analysis"][0]
-        if "gr" in ana_dic:
-            m = re.search(r"^\w+", ana_dic["gr"])
-            if m:
-                return m.group(0)
-    return None
 
 
 def generate_idf_keywords(texts, stopword_src=None, freq_threshold=0, avail_pos=None):
