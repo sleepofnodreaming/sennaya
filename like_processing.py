@@ -1,21 +1,21 @@
 #!/usr/local/bin/python3
 
-from generalling import parse_negations, pos
+from generalling import NegationParser, pos
 from pymystem3 import Mystem
-from typing import Dict, Union, Callable, Tuple
+from typing import Dict, Union, Callable, Tuple, List
 from wordlistlib import read_wordlists, read_csv_dictionaries
 
 import argparse
 import csv
+import itertools
 import logging
 import os
 import re
 import sys
 
-logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO)
+logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
 mystem = Mystem()
-
 
 DISLIKES = [6, 14, 15]
 LIKES = [5, 12, 13]
@@ -52,9 +52,12 @@ class Answer(object):
 
     def __init__(self, string):
         self._src = string.strip()
-        self._text = [i["text"] for i in mystem.analyze(self._src) if i["text"].strip()]
-        self._lemmas = [(i, pos(i)) for i in mystem.lemmatize(self._src) if i.strip()]
+        lemmas = [(i.strip(), pos(i)) for i in mystem.lemmatize(self._src) if i.strip()]
+        self._lemmas = list(itertools.dropwhile(lambda a: a[1] is None, lemmas))
+        text = [i["text"] for i in mystem.analyze(self._src) if i["text"].strip()]
+        self._text = text[len(text) - len(self._lemmas):]
         assert len(self._text) == len(self._lemmas), "A number of word forms is not equal to a number of lemmas."
+        logging.info("New answer created, lemmas: {}".format(self._lemmas))
 
     def __len__(self):
         return len(self._lemmas)
@@ -102,40 +105,87 @@ def lemma_list_converter_factory(negations, ignorables):
 
     :return: a func to use as a matching one.
     """
-    def func(lemmas):
-        text, is_neg = parse_negations(lemmas, negations, ignorables)
+
+    parse_negations = NegationParser(negations, ignorables)
+
+    def default_func(lemmas):
+        text, is_neg = parse_negations(lemmas)
         if len(text) > 1 and text[1] in ["пространство", "место"]:
             text = text[:2]
         return text, is_neg
 
-    return func
+    def np_func(lemmas):
+        text, is_neg = parse_negations(lemmas)
+        cut_text = list(itertools.dropwhile(lambda a: pos(a) == "A", text))
+        return (cut_text, is_neg) if cut_text and pos(cut_text[0]) == "S" else (text, is_neg)
+
+    return [(default_func, "default"), (np_func, "np_cut")]
 
 
-def match_to_predefined_answer(
-        answer: Answer,
-        synonim_dic: Dict[str, str],
-        postprocess: Callable[[list], Tuple[str, bool]]) -> Union[None, str]:
-    """
-    Match an answer to a dictionary entry, if possible.
+class _MatchToPredefinedAnswer(object):
+    def __init__(self):
+        self.__dict_cache = None
 
-    :param answer: An answer of a respondent.
-    :param synonim_dic: A dictionary matching synonymic words to the same entry key.
-    :param postprocess: A func converting a list of lemmas to a pair (dict key, negation).
+    def __call__(self,
+                 line: int,
+                 answer: Answer,
+                 synonim_dic: Dict[str, str],
+                 postprocessings: List[Callable[[list], Tuple[str, bool]]]) -> Union[None, str]:
+        """
+        Match an answer to a dictionary entry, if possible.
 
-    :return: None, if the answer doesn't match anything; a dict entry string key, otherwise.
-    """
-    to_string = lambda a: " ".join(a)
-    to_text_answer = lambda t, n: ("" if n else "нет ") + synonim_dic[to_string(t)]
+        :param answer: An answer of a respondent.
+        :param synonim_dic: A dictionary matching synonymic words to the same entry key.
+        :param postprocessings: A list of funcs converting a list of lemmas to a pair (dict key, negation).
 
-    if not answer.is_empty:
-        for remove_punct in (False, True):
-            cut_text, neg = postprocess(answer.get_lemmas(remove_punct, False))
-            if to_string(cut_text) in synonim_dic:
-                return to_text_answer(cut_text, neg)
-    answer = answer.shorten()
-    cut_text, neg = postprocess(answer.get_lemmas(False, False))
-    if to_string(cut_text) in synonim_dic:
-        return to_text_answer(cut_text, neg)
+        :returns: None, if the answer doesn't match anything; a dict entry string key, otherwise.
+
+        :raises AssertionError: If postprocessings list's empty.
+        """
+        assert postprocessings
+
+        if synonim_dic is not self.__dict_cache:
+            self.__dict_cache = synonim_dic
+            self.startingwith_re = re.compile(r'\b(' + r"|".join(sorted(synonim_dic.keys())) + r")\b")
+
+        to_string = lambda a: " ".join(a)
+        to_text_answer = lambda t, n: ("" if n else "нет ") + synonim_dic[to_string(t)]
+
+        archived_text = archived_neg = None
+
+        if not answer.is_empty:
+            for remove_punct in (False, True):
+                for postprocess, name in postprocessings:
+                    cut_text, neg = postprocess(answer.get_lemmas(remove_punct, False))
+                    logging.info("Parsed (line {}): {} -> {}({})".format(line, answer._src, neg, cut_text))
+                    if archived_text is None:
+                        archived_text, archived_neg = cut_text, neg
+                    if to_string(cut_text) in synonim_dic:
+                        result = to_text_answer(cut_text, neg)
+                        logging.info("Conversion hypothesis (line {}) [exact match, {} postproc, full answer]: {} -> {}".format(line, name, answer._src, result))
+                        return result
+                    m = self.startingwith_re.search(to_string(cut_text))
+                    if m:
+                        result = ("" if neg else "нет ") + synonim_dic[m.group(0)]
+                        logging.info("Conversion hypothesis (line {}) [substring match, {} postproc, full answer]: {} -> {}".format(line, name, answer._src, result))
+                        return result
+
+            shortened_answer = answer.shorten()
+            if not shortened_answer.is_empty:
+                for postprocess, name in postprocessings:
+                    cut_text, neg = postprocess(shortened_answer.get_lemmas(False, False))
+                    if to_string(cut_text) in synonim_dic:
+                        result = to_text_answer(cut_text, neg)
+                        logging.info(
+                            "Conversion hypothesis (line {}) [exact match, {} postproc, shortened answer]: {} -> {}".format(line, name, answer._src, result))
+                        return result
+
+            result = ("" if archived_neg else "нет ") + to_string(archived_text)
+            logging.info("No conversion hypothesis (line {}): {} -> {}".format(line, answer._src, result))
+            return result
+
+
+match_to_predefined_answer = _MatchToPredefinedAnswer()
 
 
 def parse_args():
@@ -157,19 +207,23 @@ if __name__ == '__main__':
 
     parsed = parse_args()
 
-    negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False), HardPaths.dictionaries)
-    ready_answers = convert_csv_dictionary(read_csv_dictionaries([HardPaths.LIKE_MATCHING], True))
+    ready_answers = convert_csv_dictionary(read_csv_dictionaries([
+        HardPaths.LIKE_MATCHING,
+    ], True))
     syn_dic = convert_csv_dictionary(read_csv_dictionaries([HardPaths.SYNONYM_DICT], False))
+    negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
+                                HardPaths.dictionaries)
 
     with open(parsed.unprocessed, "w") as unproc_file:
         for num, ans in read_columns(parsed.data_table, *LIKES):
-
             answer = Answer(ans)
-            if answer.get_lemmas(as_string=True) in ready_answers:
-                print(ready_answers[answer.get_lemmas(as_string=True)])
+            result = match_to_predefined_answer(num, answer, syn_dic, lemma_list_converter_factory(negations, ignorables))
+            if result is None:
+                logging.info("Skipped (line {}): {}".format(num, ans))
                 continue
-            result = match_to_predefined_answer(answer, syn_dic, lemma_list_converter_factory(negations, ignorables))
             if ready_answers.get(result) is not None:
+                logging.info("Matched (line {}): {} -> {}".format(num, result, ready_answers[result]))
                 print(ready_answers[result])
             else:
-                print(answer._src.lower(), file=unproc_file)
+                logging.info("Unmatched (line {}): {}".format(num, result))
+                print(ans.lower(), file=unproc_file)
