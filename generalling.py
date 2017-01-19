@@ -15,6 +15,13 @@ def parse_negations(lemmas: list, dictionary: list, ignored: Union[None, list]=N
     :return:
     """
     text = " ".join(lemmas)
+
+    if ignored is not None:
+        for i in ignored:
+            if text.startswith(i):
+                text = text[len(i):].strip()
+                break
+
     for neg in dictionary:
         if text.startswith(neg + " "):
             text, positive = text[len(neg) + 1:].strip(), False
