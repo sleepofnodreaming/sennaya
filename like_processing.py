@@ -1,5 +1,6 @@
 #!/usr/local/bin/python3
 
+from collections import namedtuple
 from generalling import NegationParser, pos
 from pymystem3 import Mystem
 from typing import Dict, Union, Callable, Tuple, List
@@ -48,9 +49,17 @@ class HardPaths(object):
 
 
 class Answer(object):
+    """
+    A class facilitating processing of an answer.
+    """
     __russian_letter = re.compile(r"[а-яё]", flags=re.I)
 
     def __init__(self, string):
+        """
+        Create a new answer instance.
+
+        :param string: a text of an answer 'as is'.
+        """
         self._src = string.strip()
         lemmas = [(i.strip(), pos(i)) for i in mystem.lemmatize(self._src) if i.strip()]
         self._lemmas = list(itertools.dropwhile(lambda a: a[1] is None, lemmas))
@@ -60,13 +69,31 @@ class Answer(object):
         logging.info("New answer created, lemmas: {}".format(self._lemmas))
 
     def __len__(self):
+        """
+        Calculate length of an answer (in words).
+
+        :return: a number of tokens (including punctuation).
+        """
         return len(self._lemmas)
 
-    def get_lemmas(self, skip_punct=True, as_string=False):
+    def get_lemmas(self, skip_punct=True, as_string=False) -> Union[list, str]:
+        """
+        Get lemmas of an answer.
+
+        :param skip_punct: If True, punctuation's omitted.
+        :param as_string: If True, the result of a function's converted to a string (tokens are joined with a space).
+
+        :return: a list or a string.
+        """
         lemmas = [w for (w, p) in self._lemmas if not skip_punct or p]
         return " ".join(lemmas) if as_string else lemmas
 
     def shorten(self):
+        """
+        Cut off anything following the first lemma without POS.
+
+        :return: A new instance of Answer with a shortemed lemma list.
+        """
         for i, (l, p) in enumerate(self._lemmas):
             if p is None:
                 shortened_answer = Answer(self._src)
@@ -153,6 +180,10 @@ class _MatchToPredefinedAnswer(object):
 
         archived_text = archived_neg = None
 
+        hypotheses = []
+
+        Hypothesis = namedtuple("Hypothesis", ["text", "match", "postproc", "answer", "punct"])
+
         if not answer.is_empty:
             for remove_punct in (False, True):
                 for postprocess, name in postprocessings:
@@ -162,27 +193,17 @@ class _MatchToPredefinedAnswer(object):
                         archived_text, archived_neg = cut_text, neg
                     if to_string(cut_text) in synonim_dic:
                         result = to_text_answer(cut_text, neg)
-                        logging.info("Conversion hypothesis (line {}) [exact match, {} postproc, full answer]: {} -> {}".format(line, name, answer._src, result))
-                        return result
+                        hypotheses.append(Hypothesis(result, "exact", name, "full", not remove_punct))
                     m = self.startingwith_re.search(to_string(cut_text))
                     if m:
                         result = ("" if neg else "нет ") + synonim_dic[m.group(0)]
-                        logging.info("Conversion hypothesis (line {}) [substring match, {} postproc, full answer]: {} -> {}".format(line, name, answer._src, result))
-                        return result
+                        hypotheses.append(Hypothesis(result, "substring", name, "full", not remove_punct))
 
-            shortened_answer = answer.shorten()
-            if not shortened_answer.is_empty:
-                for postprocess, name in postprocessings:
-                    cut_text, neg = postprocess(shortened_answer.get_lemmas(False, False))
-                    if to_string(cut_text) in synonim_dic:
-                        result = to_text_answer(cut_text, neg)
-                        logging.info(
-                            "Conversion hypothesis (line {}) [exact match, {} postproc, shortened answer]: {} -> {}".format(line, name, answer._src, result))
-                        return result
 
             result = ("" if archived_neg else "нет ") + to_string(archived_text)
-            logging.info("No conversion hypothesis (line {}): {} -> {}".format(line, answer._src, result))
-            return result
+            hypotheses.append(Hypothesis(result, "initial", None, None, None))
+
+            return hypotheses
 
 
 match_to_predefined_answer = _MatchToPredefinedAnswer()
@@ -217,13 +238,20 @@ if __name__ == '__main__':
     with open(parsed.unprocessed, "w") as unproc_file:
         for num, ans in read_columns(parsed.data_table, *LIKES):
             answer = Answer(ans)
-            result = match_to_predefined_answer(num, answer, syn_dic, lemma_list_converter_factory(negations, ignorables))
-            if result is None:
+            hypotheses = match_to_predefined_answer(num, answer, syn_dic, lemma_list_converter_factory(negations, ignorables))
+            if hypotheses is None:
                 logging.info("Skipped (line {}): {}".format(num, ans))
                 continue
-            if ready_answers.get(result) is not None:
-                logging.info("Matched (line {}): {} -> {}".format(num, result, ready_answers[result]))
-                print(ready_answers[result])
+            for result in hypotheses:
+                if ready_answers.get(result.text) is not None:
+                    if result[-1] is not None:
+                        logging.info("Converted (line {0}) [{1.match} match, {1.postproc} postproc, {1.answer} answer]: {2} -> {1.text}".format(num, result, ans))
+                    else:
+                        logging.info("Not converted (line {}): {} -> {}".format(num, ans, result.text))
+
+                    logging.info("Matched (line {}): {} -> {}".format(num, result.text, ready_answers[result.text]))
+                    print(ready_answers[result.text])
+                    break
             else:
-                logging.info("Unmatched (line {}): {}".format(num, result))
+                logging.info("Unmatched (line {}): {}".format(num, [i.text for i in hypotheses]))
                 print(ans.lower(), file=unproc_file)
