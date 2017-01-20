@@ -50,6 +50,14 @@ def parse_negations(lemmas: list, dictionary: list, ignored: Union[None, list]=N
 
 
 def pos(wd, analyzer=GLOBAL_MYSTEM):
+    """
+    Determine a word's part of speech.
+
+    :param wd: A word to assign pos to.
+    :param analyzer: An analyzer to use to detect it.
+
+    :return: A text part-of-speech label or, if detection failed, None.
+    """
     analyses = analyzer.analyze(wd)
     if not analyses:
         return None
