@@ -36,6 +36,13 @@ class HardPaths(object):
         "manual",
         "likes.csv"
     )
+    DISLIKE_MATCHING = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "dictionaries",
+        "likes",
+        "manual",
+        "dislikes.csv"
+    )
     LIKE_DICS = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "dictionaries",
