@@ -1,7 +1,7 @@
 #!/usr/local/bin/python3
 
 from collections import namedtuple
-from generalling import NegationParser, pos
+from generalling import NegationParser, pos, SpellcheckNorm
 from pymystem3 import Mystem
 from typing import Dict, Union, Callable, Tuple, List
 from wordlistlib import read_wordlists, read_csv_dictionaries
@@ -231,34 +231,70 @@ def parse_args():
     return parsed
 
 
+def _match_answer_to_category(ans, hypotheses, ready_answers, num):
+    for result in hypotheses:
+        if ready_answers.get(result.text) is not None:
+            if result[-1] is not None:
+                logging.info(
+                    "Converted (line {0}) [{1.match} match, {1.postproc} postproc, {1.answer} answer]: {2} -> {1.text}".format(
+                        num, result, ans))
+            else:
+                logging.info("Not converted (line {}): {} -> {}".format(num, ans, result.text))
+
+            logging.info("Matched (line {}): {} -> {}".format(num, result.text, ready_answers[result.text]))
+            return ready_answers[result.text]
+
+
+def process_text_answer(answer, syn_matcher, log_unmatched=False):
+    hypotheses = syn_matcher(answer)
+    ready_answer = _match_answer_to_category(ans, hypotheses, ready_answers, num)
+    if ready_answer:
+        print(ready_answer)
+        return True
+    if log_unmatched:
+        logging.info("Unmatched (line {}): {}".format(num, [i.text for i in hypotheses]))
+    return False
+
+
 if __name__ == '__main__':
 
     parsed = parse_args()
 
     ready_answers = convert_csv_dictionary(read_csv_dictionaries([
-        HardPaths.LIKE_MATCHING,
+        HardPaths.DISLIKE_MATCHING,
     ], True))
     syn_dic = convert_csv_dictionary(read_csv_dictionaries([HardPaths.SYNONYM_DICT], False))
     negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
                                 HardPaths.dictionaries)
 
+    spellcheck = SpellcheckNorm("ru_RU", *[negations, ignorables])
+
     with open(parsed.unprocessed, "w") as unproc_file:
-        for num, ans in read_columns(parsed.data_table, *LIKES):
+        for num, ans in read_columns(parsed.data_table, *DISLIKES):
+            direct_match = ready_answers.get(ans.lower())
+            if direct_match:
+                logging.info("Matched directly (line {}): {} -> {}".format(num, ans, direct_match))
+                print(direct_match)
+                continue
+
+            synonym_matcher = lambda a: match_to_predefined_answer(num, a, syn_dic, lemma_list_converter_factory(negations, ignorables))
+
             answer = Answer(ans)
-            hypotheses = match_to_predefined_answer(num, answer, syn_dic, lemma_list_converter_factory(negations, ignorables))
-            if hypotheses is None:
+
+            if answer.is_empty:
                 logging.info("Skipped (line {}): {}".format(num, ans))
                 continue
-            for result in hypotheses:
-                if ready_answers.get(result.text) is not None:
-                    if result[-1] is not None:
-                        logging.info("Converted (line {0}) [{1.match} match, {1.postproc} postproc, {1.answer} answer]: {2} -> {1.text}".format(num, result, ans))
-                    else:
-                        logging.info("Not converted (line {}): {} -> {}".format(num, ans, result.text))
 
-                    logging.info("Matched (line {}): {} -> {}".format(num, result.text, ready_answers[result.text]))
-                    print(ready_answers[result.text])
-                    break
-            else:
-                logging.info("Unmatched (line {}): {}".format(num, [i.text for i in hypotheses]))
-                print(ans.lower(), file=unproc_file)
+            if not process_text_answer(answer, synonym_matcher):
+                logging.info("Trying spellcheck...")
+                ans_norm = spellcheck(ans)
+                if ans != ans_norm:
+                    logging.info("Spellckeck (line {}): {} -> {}".format(num, ans, ans_norm))
+                    ans = ans_norm
+                    answer = Answer(ans)
+                    if not answer.is_empty:
+                        if not process_text_answer(answer, synonym_matcher, log_unmatched=True):
+                            print(ans.lower(), file=unproc_file)
+                else:
+                    logging.info("Spellcheck dropped.")
+                    print(ans.lower(), file=unproc_file)
