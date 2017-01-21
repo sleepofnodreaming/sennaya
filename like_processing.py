@@ -27,7 +27,7 @@ class HardPaths(object):
         os.path.dirname(os.path.abspath(__file__)),
         "dictionaries",
         "likes",
-        "synonym_dict.csv"
+        "tagging_dict.csv"
     )
     LIKE_MATCHING = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -215,6 +215,29 @@ class _MatchToPredefinedAnswer(object):
 match_to_predefined_answer = _MatchToPredefinedAnswer()
 
 
+def _match_answer_to_category(ans, hypotheses, ready_answers, num):
+    for result in hypotheses:
+        if ready_answers.get(result.text) is not None:
+            if result[-1] is not None:
+                logging.info(
+                    "Converted (line {0}) [{1.match} match, {1.postproc} postproc, {1.answer} answer]: {2} -> {1.text}".format(
+                        num, result, ans))
+            else:
+                logging.info("Not converted (line {}): {} -> {}".format(num, ans, result.text))
+
+            logging.info("Matched (line {}): {} -> {}".format(num, result.text, ready_answers[result.text]))
+            return ready_answers[result.text]
+
+
+def process_text_answer(answer, syn_matcher, num):
+    hypotheses = syn_matcher(answer)
+    ready_answer = _match_answer_to_category(answer._src, hypotheses, ready_answers, num)
+    if ready_answer:
+        print(ready_answer)
+        return True
+    return False
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="A script producing statistics on respondents' likes and dislikes.")
     parser.add_argument("like", metavar="STR", type=str, help="'like' or 'dislike'.")
@@ -232,29 +255,6 @@ def parse_args():
     else:
         parsed.unprocessed = os.devnull
     return parsed
-
-
-def _match_answer_to_category(ans, hypotheses, ready_answers, num):
-    for result in hypotheses:
-        if ready_answers.get(result.text) is not None:
-            if result[-1] is not None:
-                logging.info(
-                    "Converted (line {0}) [{1.match} match, {1.postproc} postproc, {1.answer} answer]: {2} -> {1.text}".format(
-                        num, result, ans))
-            else:
-                logging.info("Not converted (line {}): {} -> {}".format(num, ans, result.text))
-
-            logging.info("Matched (line {}): {} -> {}".format(num, result.text, ready_answers[result.text]))
-            return ready_answers[result.text]
-
-
-def process_text_answer(answer, syn_matcher):
-    hypotheses = syn_matcher(answer)
-    ready_answer = _match_answer_to_category(answer._src, hypotheses, ready_answers, num)
-    if ready_answer:
-        print(ready_answer)
-        return True
-    return False
 
 
 if __name__ == '__main__':
@@ -291,7 +291,7 @@ if __name__ == '__main__':
                 logging.info("Skipped (line {}): {}".format(num, ans))
                 continue
 
-            if not process_text_answer(answer, synonym_matcher):
+            if not process_text_answer(answer, synonym_matcher, num):
                 logging.info("Trying spellcheck...")
                 ans_norm = spellcheck(ans)
                 if ans != ans_norm:
@@ -299,7 +299,7 @@ if __name__ == '__main__':
                     ans = ans_norm
                     answer = Answer(ans)
                     if not answer.is_empty:
-                        if not process_text_answer(answer, synonym_matcher):
+                        if not process_text_answer(answer, synonym_matcher, num):
                             print(ans.lower(), file=unproc_file)
                 else:
                     logging.info("Spellcheck dropped.")
