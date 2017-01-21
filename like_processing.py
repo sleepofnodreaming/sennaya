@@ -217,12 +217,16 @@ match_to_predefined_answer = _MatchToPredefinedAnswer()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="A script producing statistics on respondents' likes and dislikes.")
+    parser.add_argument("like", metavar="STR", type=str, help="'like' or 'dislike'.")
     parser.add_argument("data_table", metavar="PATH", type=str, help="A path to a csv table containing the data.")
+
     parser.add_argument("-u", "--unprocessed", metavar="PATH", type=str,
                         help="A path to a file to write unprocessed answers to.")
+
     parsed = parser.parse_args()
     parsed.data_table = os.path.expanduser(os.path.abspath(parsed.data_table))
     assert os.path.isfile(parsed.data_table)
+    assert parsed.like in ("like", "dislike")
     if parsed.unprocessed:
         parsed.unprocessed = os.path.expanduser(os.path.abspath(parsed.unprocessed))
     else:
@@ -258,7 +262,7 @@ if __name__ == '__main__':
     parsed = parse_args()
 
     ready_answers = convert_csv_dictionary(read_csv_dictionaries([
-        HardPaths.DISLIKE_MATCHING,
+        HardPaths.LIKE_MATCHING if parsed.like == "like" else HardPaths.DISLIKE_MATCHING,
     ], True))
     syn_dic = convert_csv_dictionary(read_csv_dictionaries([HardPaths.SYNONYM_DICT], False))
     negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
@@ -267,7 +271,7 @@ if __name__ == '__main__':
     spellcheck = SpellcheckNorm("ru_RU", *[negations, ignorables])
 
     with open(parsed.unprocessed, "w") as unproc_file:
-        for num, ans in read_columns(parsed.data_table, *DISLIKES):
+        for num, ans in read_columns(parsed.data_table, *(LIKES if parsed.like == "like" else DISLIKES)):
             direct_match = ready_answers.get(ans.lower())
             if direct_match:
                 logging.info("Matched directly (line {}): {} -> {}".format(num, ans, direct_match))
