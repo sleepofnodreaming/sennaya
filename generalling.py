@@ -1,13 +1,20 @@
-import re
-from typing import Union, Tuple, List
+"""
+A module containing all commonly used project's linguistic things.
+"""
 
+import enchant
 import pymystem3
+import re
+
+from typing import Union, Tuple, List
 
 GLOBAL_MYSTEM = pymystem3.Mystem()
 
 
 class NegationParser(object):
-
+    """
+    A class working as a factory of functions parsing negations.
+    """
     def __init__(self, negation_dict: List[str], ignoring_dict: Union[List[str], None]):
         self._negation_dict = negation_dict
         self._ignoring_dict = ignoring_dict
@@ -15,7 +22,7 @@ class NegationParser(object):
         self._ignor_cut = None if self._ignoring_dict else re.compile(r'\b(' + r'|'.join(self._ignoring_dict) + r')\b')
 
     @staticmethod
-    def cut_with_re(string, regex):
+    def _cut_with_re(string, regex):
         if regex is None:
             return string
         m = regex.match(string)
@@ -28,14 +35,14 @@ class NegationParser(object):
             if update_text is not None:
                 text = update_text
             if neg:
-                update_text = self.cut_with_re(text, self._neg_cut).lstrip()
+                update_text = self._cut_with_re(text, self._neg_cut).lstrip()
                 if update_text != text:
                     neg = False
-            update_text = self.cut_with_re(update_text, self._ignor_cut).lstrip()
+            update_text = self._cut_with_re(update_text, self._ignor_cut).lstrip()
         return update_text.split(), neg
 
 
-def parse_negations(lemmas: list, dictionary: list, ignored: Union[None, list]=None) -> Tuple[list, bool]:
+def parse_negations(lemmas: list, dictionary: list, ignored: Union[None, list] = None) -> Tuple[list, bool]:
     """
     A deprecated wrapper for NegationParser factory.
 
@@ -69,3 +76,35 @@ def pos(wd, analyzer=GLOBAL_MYSTEM):
             if m:
                 return m.group(0)
     return None
+
+
+class SpellcheckNorm(object):
+    """
+    A class acting as a factory of functions performing string's spell check.
+    """
+    def __init__(self, dict_name):
+        if not enchant.dict_exists(dict_name):
+            raise ValueError("A dictionary ")
+        self.spellcheck_dict = enchant.Dict(dict_name)
+        self._wds = re.compile(r'\b([\w-]+)\b', flags=re.U | re.I)
+
+    def __call__(self, text):
+
+        def spellckeck_required(wd):
+            analyses = GLOBAL_MYSTEM.analyze(wd)
+            if not analyses:
+                return True
+            dic = analyses[0]
+            if "analysis" in dic and dic["analysis"]:
+                ana_dic = dic["analysis"][0]
+                if ana_dic.get("qual") == "bastard":
+                    return True
+            return False
+
+        def spellcheckme(match):
+            if not spellckeck_required(match.group(1)):
+                return match.group(1)
+            suggestions = self.spellcheck_dict.suggest(match.group(1))
+            return match.group(1) if not suggestions or match.group(1) in suggestions else suggestions[0]
+
+        return self._wds.sub(spellcheckme, text)
