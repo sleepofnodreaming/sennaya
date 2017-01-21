@@ -29,20 +29,6 @@ PARKING_TEMPLATES = {
      lambda a, b: b),
 }
 
-
-def assign_headlines_parking(lemmas, pos_tags, hl_set):
-    for parking_tmpl in PARKING_TEMPLATES:
-        regex, label, func = parking_tmpl
-        m = re.search(regex, lemmas)
-        if m:
-            hl_set.add(func(m, label))
-            break
-    else:
-        if not (set(pos_tags) - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
-            if not "вело" in lemmas:
-                hl_set.add("устроить парковку")
-
-
 APPROVAL_WORDS = [
     "организовывать",
     "вернуть",
@@ -67,6 +53,7 @@ APPROVAL_WORDS = [
 
 FOOD_NAMES = "шаверма,стрит фуд,стритфуд,выпечка,шаурма,фастфуд,общепит,макдональдс,мороженое,булочка,автомат,кофе,фудкорт,еда,фаст - фуд,перекус".split(
     ",")
+
 RESTAURANT_NAMES = "кафе,кафетерий,ресторан,кафешка,бистро,зонтик,терраса,веранда,кафешок".split()
 
 GOOD_FOOD_MARKERS = [
@@ -82,8 +69,32 @@ GOOD_FOOD_MARKERS = [
 
 ]
 
+QUESTIONED = {
+    "Кафе, рестораны",
+    "Уличная еда",
+    "Парковки",
+    "Торговля",
+    "Транспорт",
+    "Переходы",
+    "Лавки",
+    "?",
+}
+
 SENTENCE_START = r'(?:((?:ларек|ларёк|киоск|будочка|магазин) с |быть(?: бы)? )(?:\w+?[оыи]й )?)?(?:{})'.format(
     "|".join(FOOD_NAMES))
+
+
+def assign_headlines_parking(lemmas, pos_tags, hl_set):
+    for parking_tmpl in PARKING_TEMPLATES:
+        regex, label, func = parking_tmpl
+        m = re.search(regex, lemmas)
+        if m:
+            hl_set.add(func(m, label))
+            break
+    else:
+        if not (set(pos_tags) - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
+            if not "вело" in lemmas:
+                hl_set.add("устроить парковку")
 
 
 def assign_headlines_food(lemmas, additional_headlines):
@@ -133,18 +144,6 @@ def assign_headlines_restaurants(lemmas, pos_tags, additional_headlines):
 
     if not (set(pos_tags) - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
         additional_headlines.add(approval_label)
-
-
-QUESTIONED = {
-    "Кафе, рестораны",
-    "Уличная еда",
-    "Парковки",
-    "Торговля",
-    "Транспорт",
-    "Переходы",
-    "Лавки",
-    "?",
-}
 
 
 class Postprocs(object):
@@ -301,5 +300,5 @@ if __name__ == "__main__":
             else:
                 active_writer = c_writer
             line = [str(num + 2), answer] + sorted(tags) + [""] * (
-            len(header_tagging) - len(tags))  # ["" if i not in tags else i for i in header_tagging]
+                len(header_tagging) - len(tags))  # ["" if i not in tags else i for i in header_tagging]
             active_writer.writerow(line)
