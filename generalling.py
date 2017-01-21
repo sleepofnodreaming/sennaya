@@ -3,6 +3,7 @@ A module containing all commonly used project's linguistic things.
 """
 
 import enchant
+import itertools
 import pymystem3
 import re
 
@@ -82,10 +83,12 @@ class SpellcheckNorm(object):
     """
     A class acting as a factory of functions performing string's spell check.
     """
-    def __init__(self, dict_name):
+    def __init__(self, dict_name, *wordlists):
         if not enchant.dict_exists(dict_name):
             raise ValueError("A dictionary ")
         self.spellcheck_dict = enchant.Dict(dict_name)
+        for word in itertools.chain(*wordlists):
+            self.spellcheck_dict.add_to_session(word)
         self._wds = re.compile(r'\b([\w-]+)\b', flags=re.U | re.I)
 
     def __call__(self, text):
@@ -102,6 +105,8 @@ class SpellcheckNorm(object):
             return False
 
         def spellcheckme(match):
+            if self.spellcheck_dict.is_added(match.group(1)) or self.spellcheck_dict.check(match.group(1)):
+                return match.group(1)
             if not spellckeck_required(match.group(1)):
                 return match.group(1)
             suggestions = self.spellcheck_dict.suggest(match.group(1))
