@@ -206,7 +206,6 @@ class _MatchToPredefinedAnswer(object):
                         result = ("" if neg else "нет ") + synonim_dic[m.group(0)]
                         hypotheses.append(Hypothesis(result, "substring", name, "full", not remove_punct))
 
-
             result = ("" if archived_neg else "нет ") + to_string(archived_text)
             hypotheses.append(Hypothesis(result, "initial", None, None, None))
 
@@ -245,14 +244,12 @@ def _match_answer_to_category(ans, hypotheses, ready_answers, num):
             return ready_answers[result.text]
 
 
-def process_text_answer(answer, syn_matcher, log_unmatched=False):
+def process_text_answer(answer, syn_matcher):
     hypotheses = syn_matcher(answer)
-    ready_answer = _match_answer_to_category(ans, hypotheses, ready_answers, num)
+    ready_answer = _match_answer_to_category(answer._src, hypotheses, ready_answers, num)
     if ready_answer:
         print(ready_answer)
         return True
-    if log_unmatched:
-        logging.info("Unmatched (line {}): {}".format(num, [i.text for i in hypotheses]))
     return False
 
 
@@ -277,7 +274,12 @@ if __name__ == '__main__':
                 print(direct_match)
                 continue
 
-            synonym_matcher = lambda a: match_to_predefined_answer(num, a, syn_dic, lemma_list_converter_factory(negations, ignorables))
+            synonym_matcher = lambda a: match_to_predefined_answer(
+                num,
+                a,
+                syn_dic,
+                lemma_list_converter_factory(negations, ignorables)
+            )
 
             answer = Answer(ans)
 
@@ -293,7 +295,7 @@ if __name__ == '__main__':
                     ans = ans_norm
                     answer = Answer(ans)
                     if not answer.is_empty:
-                        if not process_text_answer(answer, synonym_matcher, log_unmatched=True):
+                        if not process_text_answer(answer, synonym_matcher):
                             print(ans.lower(), file=unproc_file)
                 else:
                     logging.info("Spellcheck dropped.")
