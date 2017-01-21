@@ -1,11 +1,5 @@
 #!/usr/local/bin/python3
 
-from collections import namedtuple
-from generalling import NegationParser, pos, SpellcheckNorm
-from pymystem3 import Mystem
-from typing import Dict, Union, Callable, Tuple, List
-from wordlistlib import read_wordlists, read_csv_dictionaries
-
 import argparse
 import csv
 import itertools
@@ -13,10 +7,15 @@ import logging
 import os
 import re
 import sys
+from collections import namedtuple
+from typing import Dict, Union, Callable, Tuple, List
+
+from answer import Answer
+from generalling import NegationParser, pos, SpellcheckNorm
+from wordlistlib import read_wordlists, read_csv_dictionaries
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
-mystem = Mystem()
 
 DISLIKES = [6, 14, 15]
 LIKES = [5, 12, 13]
@@ -53,64 +52,6 @@ class HardPaths(object):
         "negations.txt",
         "ignorables.txt",
     )
-
-
-class Answer(object):
-    """
-    A class facilitating processing of an answer.
-    """
-    __russian_letter = re.compile(r"[а-яё]", flags=re.I)
-
-    def __init__(self, string):
-        """
-        Create a new answer instance.
-
-        :param string: a text of an answer 'as is'.
-        """
-        self._src = string.strip()
-        lemmas = [(i.strip(), pos(i)) for i in mystem.lemmatize(self._src) if i.strip()]
-        self._lemmas = list(itertools.dropwhile(lambda a: a[1] is None, lemmas))
-        text = [i["text"] for i in mystem.analyze(self._src) if i["text"].strip()]
-        self._text = text[len(text) - len(self._lemmas):]
-        assert len(self._text) == len(self._lemmas), "A number of word forms is not equal to a number of lemmas."
-        logging.info("New answer created, lemmas: {}".format(self._lemmas))
-
-    def __len__(self):
-        """
-        Calculate length of an answer (in words).
-
-        :return: a number of tokens (including punctuation).
-        """
-        return len(self._lemmas)
-
-    def get_lemmas(self, skip_punct=True, as_string=False) -> Union[list, str]:
-        """
-        Get lemmas of an answer.
-
-        :param skip_punct: If True, punctuation's omitted.
-        :param as_string: If True, the result of a function's converted to a string (tokens are joined with a space).
-
-        :return: a list or a string.
-        """
-        lemmas = [w for (w, p) in self._lemmas if not skip_punct or p]
-        return " ".join(lemmas) if as_string else lemmas
-
-    def shorten(self):
-        """
-        Cut off anything following the first lemma without POS.
-
-        :return: A new instance of Answer with a shortemed lemma list.
-        """
-        for i, (l, p) in enumerate(self._lemmas):
-            if p is None:
-                shortened_answer = Answer(self._src)
-                shortened_answer._text, shortened_answer._lemmas = self._text[:i], self._lemmas[:i]
-                return shortened_answer
-        return self
-
-    @property
-    def is_empty(self):
-        return all(p is None or not self.__russian_letter.search(w) for w, p in self._lemmas)
 
 
 def read_columns(fn, *columns):

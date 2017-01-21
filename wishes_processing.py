@@ -3,6 +3,7 @@
 import csv
 import re
 import os
+from answer import Answer
 from generalling import pos
 from pymystem3 import Mystem
 
@@ -148,13 +149,13 @@ def assign_headlines_restaurants(lemmas, pos_tags, additional_headlines):
 
 class Postprocs(object):
     @classmethod
-    def no_change_postproc(cls, words, lemmas, pos_tags, hls):
+    def no_change_postproc(cls, answer, hls):
         if TagNames.NO_CHANGE_REQUIRED in hls:
             hls.clear()
             hls.add(TagNames.NO_CHANGE_REQUIRED)
 
     @classmethod
-    def trade_postproc(cls, words, lemmas, pos_tags, hls):
+    def trade_postproc(cls, answer, hls):
         if TagNames.ALLOW_TRADE in hls or TagNames.FORBID_TRADE in hls:
             hls.discard(TagNames.TRADE_GENERAL)
         if TagNames.ALLOW_TRADE in hls and TagNames.FORBID_TRADE in hls:
@@ -163,30 +164,31 @@ class Postprocs(object):
             hls.remove(TagNames.FORBID_TRADE)
 
     @classmethod
-    def parking_postproc(cls, words, lemmas, pos_tags, hls):
+    def parking_postproc(cls, answer, hls):
         if TagNames.PARKING_GENERAL in hls:
             additional_headlines = set()
-            assign_headlines_parking(lemmas, pos_tags, additional_headlines)
+            assign_headlines_parking(answer.get_lemmas(False, True), answer.pos_tags, additional_headlines)
             if additional_headlines:
                 hls.remove(TagNames.PARKING_GENERAL)
                 hls.update({i.capitalize() for i in additional_headlines})
 
     @classmethod
-    def street_food_postproc(cls, words, lemmas, pos_tags, hls):
+    def street_food_postproc(cls, answer, hls):
         if TagNames.STREET_FOOD_GENERAL in hls:
-            assign_headlines_food(lemmas, hls)
+            assign_headlines_food(answer.get_lemmas(False, True), hls)
             if TagNames.ALLOW_STREET_FOOD in hls:
                 hls.remove(TagNames.STREET_FOOD_GENERAL)
 
     @classmethod
-    def cafe_postproc(cls, words, lemmas, pos_tags, hls):
+    def cafe_postproc(cls, answer, hls):
         if TagNames.CAFE_GENERAL in hls:
-            assign_headlines_restaurants(lemmas, pos_tags, hls)
+            assign_headlines_restaurants(answer.get_lemmas(False, True), answer.pos_tags, hls)
             if TagNames.ALLOW_CAFE in hls:
                 hls.discard(TagNames.CAFE_GENERAL)
 
     @classmethod
-    def peak_postproc(cls, words, lemmas, pos_tags, hls):
+    def peak_postproc(cls, answer, hls):
+        words, pos_tags = answer.get_lemmas(False, False), answer.pos_tags
         if TagNames.PEAK_GENERAL in hls:
             try:
                 start_index = peak_index = words.index("пик")
@@ -215,7 +217,8 @@ def iter_column(fn, col_number):
             value = line[col_number].strip()
             lemmas = [i for i in ms.lemmatize(value) if i.strip()]
             parts_of_speech = [pos(i) for i in lemmas]
-            yield value, lemmas, parts_of_speech
+            # yield value, lemmas, parts_of_speech
+            yield Answer(value)
 
 
 def parse_args():
@@ -261,17 +264,17 @@ if __name__ == "__main__":
     results = []
     all_tags = set()
 
-    for value, lemmas_lst, parts_of_speech in iter_column(args.csv, args.column - 1):
-        lemmas_text = " ".join(lemmas_lst)
+    for answer_instance in iter_column(args.csv, args.column - 1):
+        lemmas_text = answer_instance.get_lemmas(skip_punct=False, as_string=True)
         hls = set()
         for m in matches:
             if regexes[m].search(lemmas_text):
                 hls.add(matches[m])
 
         for postproc in postproc_seq:
-            postproc(lemmas_lst, lemmas_text, parts_of_speech, hls)
+            postproc(answer_instance, hls)
 
-        results.append((value, hls))
+        results.append((answer_instance.source, hls))
         all_tags |= hls
 
     import sys
@@ -282,8 +285,8 @@ if __name__ == "__main__":
     header_tagging = sorted(all_tags)
     header = ["ID", "Исходный текст"] + header_tagging
 
-    with open("output_clear1.csv", "w") as clear_file, open("output_questioned1.csv", "w") as questioned_file, open(
-            "output_trashq.csv", "w") as trash_file:
+    with open("output_clear.csv", "w") as clear_file, open("output_questioned.csv", "w") as questioned_file, open(
+            "output_trash.csv", "w") as trash_file:
         c_writer = csv.writer(clear_file, delimiter=args.delimiter, quoting=csv.QUOTE_MINIMAL)
         q_writer = csv.writer(questioned_file, delimiter=args.delimiter, quoting=csv.QUOTE_MINIMAL)
         t_writer = csv.writer(trash_file, delimiter=args.delimiter, quoting=csv.QUOTE_MINIMAL)
