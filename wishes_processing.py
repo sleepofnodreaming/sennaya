@@ -207,18 +207,13 @@ class Postprocs(object):
 
 
 def iter_column(fn, col_number):
-    ms = Mystem()
     with open(fn) as f:
         reader = csv.reader(f, delimiter=",")
         next(reader, None)
         for line in reader:
             if col_number > len(line) - 1:
                 continue
-            value = line[col_number].strip()
-            lemmas = [i for i in ms.lemmatize(value) if i.strip()]
-            parts_of_speech = [pos(i) for i in lemmas]
-            # yield value, lemmas, parts_of_speech
-            yield Answer(value)
+            yield Answer(line[col_number].strip())
 
 
 def parse_args():
