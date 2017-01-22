@@ -5,7 +5,6 @@ import re
 import os
 from answer import Answer
 from generalling import pos
-from pymystem3 import Mystem
 
 PARKING_TEMPLATES = {
     (r'\bподземный (стоянка|паркинг)\b', "устроить подземную парковку", lambda a, b: b),
@@ -55,7 +54,7 @@ APPROVAL_WORDS = [
 FOOD_NAMES = "шаверма,стрит фуд,стритфуд,выпечка,шаурма,фастфуд,общепит,макдональдс,мороженое,булочка,автомат,кофе,фудкорт,еда,фаст - фуд,перекус".split(
     ",")
 
-RESTAURANT_NAMES = "кафе,кафетерий,ресторан,кафешка,бистро,зонтик,терраса,веранда,кафешок".split()
+RESTAURANT_NAMES = "кафе,кафетерий,ресторан,кафешка,бистро,зонтик,терраса,веранда,кафешок".split(",")
 
 GOOD_FOOD_MARKERS = [
     "to go",
@@ -112,9 +111,9 @@ def assign_headlines_food(lemmas, additional_headlines):
     if re.match(SENTENCE_START, lemmas):
         additional_headlines.add(approval_label)
         return
-    if not ({pos(i) for i in lemmas.split()} - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b",
-                                                                                                        lemmas):
-        additional_headlines.add(approval_label)
+    if not ({pos(i) for i in lemmas.split()} - {"A", "S", None, "PR", 'CONJ', "ADV"}):
+        if not re.search(r"\bнет?\b", lemmas):
+            additional_headlines.add(approval_label)
 
 
 class TagNames(object):
@@ -213,7 +212,7 @@ def iter_column(fn, col_number):
         for line in reader:
             if col_number > len(line) - 1:
                 continue
-            yield Answer(line[col_number].strip())
+            yield Answer(line[col_number])
 
 
 def parse_args():
