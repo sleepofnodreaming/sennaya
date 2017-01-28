@@ -8,7 +8,7 @@ import time
 
 from answer import Answer
 from collections import namedtuple
-from like_processing import read_columns
+from readers import read_columns
 
 PARKING_TEMPLATES = [
     (r'\bподземный (стоянка|паркинг)\b', "устроить подземную парковку", lambda a, b: b),
@@ -249,7 +249,7 @@ class Postprocs(object):
                 hls.remove(TagNames.STREET_FOOD_GENERAL)
 
     @classmethod
-    def cafe_postproc(cls, answer, hls):
+    def cafe_postproc(cls, answer: Answer, hls: set):
         if TagNames.CAFE_GENERAL in hls:
             cls._assign_headlines_restaurants(
                 answer.get_lemmas(False, True),
@@ -260,7 +260,13 @@ class Postprocs(object):
                 hls.discard(TagNames.CAFE_GENERAL)
 
     @classmethod
-    def peak_postproc(cls, answer, hls):
+    def peak_postproc(cls, answer: Answer, hls: set):
+        """
+        Check whether a "ПИК" mall is mentioned in a text as a landmark or as a subject.
+
+        :param answer: An Answer object.
+        :param hls: A current set of headlines assigned to an answer.
+        """
         words, pos_tags = answer.get_lemmas(False, False), answer.pos_tags
         if TagNames.PEAK_GENERAL in hls:
             try:

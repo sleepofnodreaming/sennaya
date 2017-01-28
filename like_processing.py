@@ -1,7 +1,6 @@
 #!/usr/local/bin/python3
 
 import argparse
-import csv
 import itertools
 import logging
 import os
@@ -12,7 +11,7 @@ from typing import Dict, Union, Callable, Tuple, List
 
 from answer import Answer
 from generalling import NegationParser, pos, SpellcheckNorm
-from wordlistlib import read_wordlists, read_csv_dictionaries
+from readers import read_wordlists, read_csv_dictionaries, read_columns
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
@@ -52,18 +51,6 @@ class HardPaths(object):
         "negations.txt",
         "ignorables.txt",
     )
-
-
-def read_columns(fn, *columns):
-    # logging.info("Reading columns from table {}. Columns chosen: {}".format(fn, ", ".join(chr(ord("A") + i - 1) for i in columns)))
-    answers = []
-    with open(fn) as f:
-        reader = csv.reader(f, delimiter=",")
-        next(reader, None)
-        for num, line in enumerate(reader):
-            line = [i.strip() for n, i in enumerate(line) if i.strip() and n + 1 in columns]
-            answers.extend(((num + 2, i) for i in set(line)))
-    return answers
 
 
 def convert_csv_dictionary(dic):
