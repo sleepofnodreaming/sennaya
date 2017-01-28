@@ -4,6 +4,8 @@ import csv
 import re
 import os
 from answer import Answer
+from like_processing import read_columns
+
 
 PARKING_TEMPLATES = [
     (r'\bподземный (стоянка|паркинг)\b', "устроить подземную парковку", lambda a, b: b),
@@ -267,13 +269,7 @@ class Postprocs(object):
 
 
 def iter_column(fn, col_number):
-    with open(fn) as f:
-        reader = csv.reader(f, delimiter=",")
-        next(reader, None)
-        for line in reader:
-            if col_number > len(line) - 1:
-                continue
-            yield Answer(line[col_number])
+    return (Answer(text) for _, text in read_columns(fn, col_number))
 
 
 def parse_args():
@@ -319,7 +315,7 @@ if __name__ == "__main__":
     results = []
     all_tags = set()
 
-    for answer_instance in iter_column(args.csv, args.column - 1):
+    for answer_instance in iter_column(args.csv, args.column):
         lemmas_text = answer_instance.get_lemmas(skip_punct=False, as_string=True)
         hls = set()
         for m in matches:
