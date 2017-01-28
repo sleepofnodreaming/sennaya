@@ -6,7 +6,7 @@ import os
 from answer import Answer
 from generalling import pos
 
-PARKING_TEMPLATES = {
+PARKING_TEMPLATES = [
     (r'\bподземный (стоянка|паркинг)\b', "устроить подземную парковку", lambda a, b: b),
     (r'\bпаркинг под площадь\b', "устроить подземную парковку", lambda a, b: b),
     (r'\wать парковка платный\b', "устроить платную парковку", lambda a, b: b),
@@ -27,46 +27,6 @@ PARKING_TEMPLATES = {
      "расширить парковку", lambda a, b: b),
     (r'(убирать с земля парковка|подземный парковка|перенести парковка под земля)', "устроить подземную парковку",
      lambda a, b: b),
-}
-
-APPROVAL_WORDS = [
-    "организовывать",
-    "вернуть",
-    "сделать",
-    "оставлять",
-    "выпивать",
-    "неплохо видеть",
-    "поставить",
-    "вкусный",
-    "хороший",
-    "качественный",
-    "появляться",
-    "устанавливать",
-    "поставлять",
-    "разрешать",
-    "неплохо быть бы видеть",
-    "открывать",
-    "где можно",
-    "отдать под",
-    "приличный",
-]
-
-FOOD_NAMES = "шаверма,стрит фуд,стритфуд,выпечка,шаурма,фастфуд,общепит,макдональдс,мороженое,булочка,автомат,кофе,фудкорт,еда,фаст - фуд,перекус".split(
-    ",")
-
-RESTAURANT_NAMES = "кафе,кафетерий,ресторан,кафешка,бистро,зонтик,терраса,веранда,кафешок".split(",")
-
-GOOD_FOOD_MARKERS = [
-    "to go",
-    "кофе с себя",
-    "выпечка",
-    "мороженое",
-    "здоровый еда",
-    "ларек с кофе",
-    "ларек с еда",
-    "лавочка с кофе",
-    "мобильный кофейня",
-
 ]
 
 QUESTIONED = {
@@ -80,40 +40,85 @@ QUESTIONED = {
     "?",
 }
 
-SENTENCE_START = r'(?:((?:ларек|ларёк|киоск|будочка|магазин) с |быть(?: бы)? )(?:\w+?[оыи]й )?)?(?:{})'.format(
-    "|".join(FOOD_NAMES))
 
+class HardcodeDictionary(object):
+    """
+    A collection of word lists.
+    These lists are supposed to be extremely specific and it makes no sense to convert them to a dictionary.
+    """
+    APPROVAL_WORDS = [
+        "организовывать",
+        "вернуть",
+        "сделать",
+        "оставлять",
+        "выпивать",
+        "неплохо видеть",
+        "поставить",
+        "вкусный",
+        "хороший",
+        "качественный",
+        "появляться",
+        "устанавливать",
+        "поставлять",
+        "разрешать",
+        "неплохо быть бы видеть",
+        "открывать",
+        "где можно",
+        "отдать под",
+        "приличный",
+    ]
 
-def assign_headlines_parking(lemmas, pos_tags, hl_set):
-    for parking_tmpl in PARKING_TEMPLATES:
-        regex, label, func = parking_tmpl
-        m = re.search(regex, lemmas)
-        if m:
-            hl_set.add(func(m, label))
-            break
-    else:
-        if not (set(pos_tags) - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
-            if not "вело" in lemmas:
-                hl_set.add("устроить парковку")
+    FOOD_NAMES = [
+        "автомат",
+        "булочка",
+        "выпечка",
+        "еда",
+        "кофе",
+        "макдональдс",
+        "мороженое",
+        "общепит",
+        "перекус",
+        "стрит фуд",
+        "стритфуд",
+        "фаст - фуд",
+        "фастфуд",
+        "фудкорт",
+        "шаверма",
+        "шаурма",
+    ]
 
+    RESTAURANT_NAMES = [
+        "бистро",
+        "веранда",
+        "зонтик",
+        "кафе",
+        "кафетерий",
+        "кафешка",
+        "кафешок",
+        "ресторан",
+        "терраса",
+    ]
 
-def assign_headlines_food(lemmas, additional_headlines):
-    approval_label = "Организовать продажу уличной еды"
-    for i in GOOD_FOOD_MARKERS:
-        if i in lemmas:
-            additional_headlines.add(approval_label)
-            return
+    GOOD_FOOD_MARKERS = [
+        "to go",
+        "кофе с себя",
+        "выпечка",
+        "мороженое",
+        "здоровый еда",
+        "ларек с кофе",
+        "ларек с еда",
+        "лавочка с кофе",
+        "мобильный кофейня",
 
-    regex = "({})[^,().!]+?({})".format("|".join(APPROVAL_WORDS), "|".join(FOOD_NAMES))
-    if re.search(regex, lemmas):
-        additional_headlines.add(approval_label)
-        return
-    if re.match(SENTENCE_START, lemmas):
-        additional_headlines.add(approval_label)
-        return
-    if not ({pos(i) for i in lemmas.split()} - {"A", "S", None, "PR", 'CONJ', "ADV"}):
-        if not re.search(r"\bнет?\b", lemmas):
-            additional_headlines.add(approval_label)
+    ]
+
+    TRADE = [
+        "будочка",
+        "киоск",
+        "ларек",
+        "ларёк",
+        "магазин",
+    ]
 
 
 class TagNames(object):
@@ -134,19 +139,64 @@ class TagNames(object):
     PEAK_GENERAL = 'ТК Пик'
 
 
-def assign_headlines_restaurants(lemmas, pos_tags, additional_headlines):
-    approval_label = TagNames.ALLOW_CAFE
-
-    regex = r"({})[^,().!]+?({})".format("|".join(APPROVAL_WORDS), "|".join(RESTAURANT_NAMES))
-    if re.search(regex, lemmas):
-        additional_headlines.add(approval_label)
-        return
-
-    if not (set(pos_tags) - {"A", "S", None, "PR", 'CONJ', "ADV"}) and not re.search(r"\bнет?\b", lemmas):
-        additional_headlines.add(approval_label)
-
-
 class Postprocs(object):
+    dic = HardcodeDictionary
+    compiled_parking_templates = (lambda: [(re.compile(r), l, f) for r, l, f in PARKING_TEMPLATES])()
+    nonverbal_phrase_tags = {"A", "S", None, "PR", 'CONJ', "ADV"}
+
+    SENTENCE_START = r'(?:((?:{trade}) с |быть(?: бы)? )(?:\w+?[оыи]й )?)?(?:{food_names})'.format(
+        trade="|".join(HardcodeDictionary.TRADE),
+        food_names="|".join(HardcodeDictionary.FOOD_NAMES)
+    )
+    FOOD_APPROVAL = "({})[^,().!]+?({})".format("|".join(dic.APPROVAL_WORDS), "|".join(dic.FOOD_NAMES))
+
+    _sentence_start_re, _food_approval_re = re.compile(SENTENCE_START), re.compile(FOOD_APPROVAL)
+    _simple_negation_re = re.compile(r"\bнет?\b")
+
+    @classmethod
+    def is_nonverbal(cls, pos_tags):
+        return not (set(pos_tags) - cls.nonverbal_phrase_tags)
+
+    @classmethod
+    def _assign_headlines_parking(cls, lemmas, pos_tags, hl_set):
+        for regex, label, func in cls.compiled_parking_templates:
+            m = regex.search(lemmas)
+            if m:
+                hl_set.add(func(m, label))
+                break
+        else:
+            if cls.is_nonverbal(pos) and not cls._simple_negation_re.search(lemmas):
+                if not "вело" in lemmas:
+                    hl_set.add("устроить парковку")
+
+    @classmethod
+    def _assign_headlines_food(cls, lemmas, pos_tags, additional_headlines):
+        approval_label = "Организовать продажу уличной еды"
+        for i in cls.dic.GOOD_FOOD_MARKERS:
+            if i in lemmas:
+                additional_headlines.add(approval_label)
+                return
+        if cls._food_approval_re.search(lemmas):
+            additional_headlines.add(approval_label)
+            return
+        if cls._sentence_start_re.match(lemmas):
+            additional_headlines.add(approval_label)
+            return
+        if cls.is_nonverbal(pos_tags) and not cls._simple_negation_re.search(lemmas):
+            additional_headlines.add(approval_label)
+
+    @classmethod
+    def _assign_headlines_restaurants(cls, lemmas, pos_tags, additional_headlines):
+        approval_label = TagNames.ALLOW_CAFE
+
+        regex = r"({})[^,().!]+?({})".format("|".join(cls.dic.APPROVAL_WORDS), "|".join(cls.dic.RESTAURANT_NAMES))
+        if re.search(regex, lemmas):
+            additional_headlines.add(approval_label)
+            return
+
+        if cls.is_nonverbal(pos_tags) and not cls._simple_negation_re.search(lemmas):
+            additional_headlines.add(approval_label)
+
     @classmethod
     def no_change_postproc(cls, answer, hls):
         if TagNames.NO_CHANGE_REQUIRED in hls:
@@ -166,7 +216,11 @@ class Postprocs(object):
     def parking_postproc(cls, answer, hls):
         if TagNames.PARKING_GENERAL in hls:
             additional_headlines = set()
-            assign_headlines_parking(answer.get_lemmas(False, True), answer.pos_tags, additional_headlines)
+            cls._assign_headlines_parking(
+                answer.get_lemmas(False, True),
+                answer.pos_tags,
+                additional_headlines
+            )
             if additional_headlines:
                 hls.remove(TagNames.PARKING_GENERAL)
                 hls.update({i.capitalize() for i in additional_headlines})
@@ -174,14 +228,22 @@ class Postprocs(object):
     @classmethod
     def street_food_postproc(cls, answer, hls):
         if TagNames.STREET_FOOD_GENERAL in hls:
-            assign_headlines_food(answer.get_lemmas(False, True), hls)
+            cls._assign_headlines_food(
+                answer.get_lemmas(False, True),
+                answer.pos_tags,
+                hls
+            )
             if TagNames.ALLOW_STREET_FOOD in hls:
                 hls.remove(TagNames.STREET_FOOD_GENERAL)
 
     @classmethod
     def cafe_postproc(cls, answer, hls):
         if TagNames.CAFE_GENERAL in hls:
-            assign_headlines_restaurants(answer.get_lemmas(False, True), answer.pos_tags, hls)
+            cls._assign_headlines_restaurants(
+                answer.get_lemmas(False, True),
+                answer.pos_tags,
+                hls
+            )
             if TagNames.ALLOW_CAFE in hls:
                 hls.discard(TagNames.CAFE_GENERAL)
 
