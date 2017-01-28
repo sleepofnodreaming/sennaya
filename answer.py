@@ -26,7 +26,7 @@ class Answer(object):
         text = [i["text"] for i in mystem.analyze(self._src) if i["text"].strip()]
         self._text = text[len(text) - len(self._lemmas):]
         assert len(self._text) == len(self._lemmas), "A number of word forms is not equal to a number of lemmas."
-        logging.info("New answer created, lemmas: {}".format(self._lemmas))
+        # logging.info("New answer created, lemmas: {}".format(self._lemmas))
 
     def __len__(self):
         """
