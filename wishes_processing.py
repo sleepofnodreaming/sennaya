@@ -4,7 +4,6 @@ import csv
 import re
 import os
 from answer import Answer
-from generalling import pos
 
 PARKING_TEMPLATES = [
     (r'\bподземный (стоянка|паркинг)\b', "устроить подземную парковку", lambda a, b: b),
@@ -165,7 +164,7 @@ class Postprocs(object):
                 hl_set.add(func(m, label))
                 break
         else:
-            if cls.is_nonverbal(pos) and not cls._simple_negation_re.search(lemmas):
+            if cls.is_nonverbal(pos_tags) and not cls._simple_negation_re.search(lemmas):
                 if not "вело" in lemmas:
                     hl_set.add("устроить парковку")
 
