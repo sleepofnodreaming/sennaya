@@ -3,6 +3,7 @@
 import csv
 import re
 import os
+import sys
 import time
 
 from answer import Answer
@@ -125,6 +126,10 @@ class HardcodeDictionary(object):
 
 
 class TagNames(object):
+    """
+    All constants naming categories assigned to answers.
+    """
+
     NO_CHANGE_REQUIRED = "Ничего не менять"
 
     TRADE_GENERAL = "Торговля"
@@ -143,6 +148,10 @@ class TagNames(object):
 
 
 class Postprocs(object):
+    """
+    A class embracing methods trying to re-assign some answers to a more precise category.
+    """
+
     dic = HardcodeDictionary
     compiled_parking_templates = (lambda: [(re.compile(r), l, f) for r, l, f in PARKING_TEMPLATES])()
     nonverbal_phrase_tags = {"A", "S", None, "PR", 'CONJ', "ADV"}
@@ -270,11 +279,11 @@ class Postprocs(object):
                 pass
 
 
-OutputFiles = namedtuple("OutputFiles", ["clear", "questioned", "trash"])
-
-
 def iter_column(fn, col_number):
     return (Answer(text) for _, text in read_columns(fn, col_number))
+
+
+OutputFiles = namedtuple("OutputFiles", ["clear", "questioned", "trash"])
 
 
 def generate_output_paths(directory=None):
@@ -355,7 +364,6 @@ if __name__ == "__main__":
         results.append((answer_instance.source, hls))
         all_tags |= hls
 
-    import sys
 
     for i in sorted(all_tags):
         print(i, file=sys.stderr)
