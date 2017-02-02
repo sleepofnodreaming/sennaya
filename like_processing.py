@@ -54,7 +54,7 @@ class HardPaths(object):
 
 
 def convert_csv_dictionary(dic):
-    return {i: dic[i].pop() for i in dic}
+    return {i: sorted(dic[i])[0] for i in dic}
 
 
 def lemma_list_converter_factory(negations, ignorables):
