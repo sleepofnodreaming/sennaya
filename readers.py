@@ -5,10 +5,11 @@ A collection of various readers for different types of files.
 import csv
 
 from typing import List, Tuple
+from collections import OrderedDict
 
 
 def read_csv_dictionaries(fns, ignore_fst_col, delimiter=","):
-    matches = {}
+    matches = OrderedDict()
     for fn in fns:
         with open(fn) as kwf:
             reader = csv.reader(kwf, delimiter=delimiter)

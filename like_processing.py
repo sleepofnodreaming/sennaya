@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import sys
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from typing import Dict, Union, Callable, Tuple, List
 
 from answer import Answer
@@ -54,8 +54,11 @@ class HardPaths(object):
 
 
 def convert_csv_dictionary(dic):
-    return {i: sorted(dic[i])[0] for i in dic}
-
+    assert issubclass(dic.__class__, dict)
+    new_dict = dic.__class__()
+    for k, v in dic.items():
+        new_dict[k] = sorted(dic[k])[0]
+    return new_dict
 
 def lemma_list_converter_factory(negations, ignorables):
     """
@@ -108,6 +111,7 @@ class _MatchToPredefinedAnswer(object):
 
         if synonim_dic is not self.__dict_cache:
             self.__dict_cache = synonim_dic
+            self._dict_index = list(syn_dic.keys())
             self.startingwith_re = re.compile(r'\b(' + r"|".join(sorted(synonim_dic.keys())) + r")\b")
 
         to_string = lambda a: " ".join(a)
@@ -129,9 +133,11 @@ class _MatchToPredefinedAnswer(object):
                     if to_string(cut_text) in synonim_dic:
                         result = to_text_answer(cut_text, neg)
                         hypotheses.append(Hypothesis(result, "exact", name, "full", not remove_punct))
-                    m = self.startingwith_re.search(to_string(cut_text))
+                    m = self.startingwith_re.findall(to_string(cut_text))
                     if m:
-                        result = ("" if neg else "нет ") + synonim_dic[m.group(0)]
+                        m.sort(key=lambda a: self._dict_index.index(a))
+                        logging.info("Prioritized tags: %s", ", ".join(m))
+                        result = ("" if neg else "нет ") + synonim_dic[m[0]]
                         hypotheses.append(Hypothesis(result, "substring", name, "full", not remove_punct))
 
             result = ("" if archived_neg else "нет ") + to_string(archived_text)
@@ -224,7 +230,6 @@ if __name__ == '__main__':
                 ans_norm = spellcheck(ans)
                 if ans != ans_norm:
                     logging.info("Spellckeck (line {}): {} -> {}".format(num, ans, ans_norm))
-                    ans = ans_norm
                     answer = Answer(ans)
                     if not answer.is_empty:
                         if not process_text_answer(answer, synonym_matcher, num):
