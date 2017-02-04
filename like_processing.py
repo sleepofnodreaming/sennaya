@@ -230,7 +230,7 @@ if __name__ == '__main__':
                 ans_norm = spellcheck(ans)
                 if ans != ans_norm:
                     logging.info("Spellckeck (line {}): {} -> {}".format(num, ans, ans_norm))
-                    answer = Answer(ans)
+                    answer = Answer(ans_norm)
                     if not answer.is_empty:
                         if not process_text_answer(answer, synonym_matcher, num):
                             print(ans.lower(), file=unproc_file)
