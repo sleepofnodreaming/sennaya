@@ -87,9 +87,31 @@ def lemma_list_converter_factory(negations, ignorables):
     return [(default_func, "default"), (np_func, "np_cut")]
 
 
+class Searcher(object):
+    def __init__(self, dictionary: OrderedDict):
+        self._regexes = {
+            word: re.compile(r"\b({})\b".format(word), flags=re.I) for word in dictionary.keys()
+        }
+        self._order = {word: number for number, word in enumerate(dictionary.keys())}
+
+    def search(self, text):
+        indices = []
+        for word, regex in self._regexes.items():
+            for match in regex.finditer(text):
+                indices.append((word, self._order[word], match.start(1)))
+        indices.sort(key=lambda a: (a[1], a[2]))
+        return [word for word, _, _ in indices]
+
+
+
 class _MatchToPredefinedAnswer(object):
     def __init__(self):
         self.__dict_cache = None
+
+    def _update_searcher(self, dictionary):
+        if dictionary is not self.__dict_cache:
+            self.__dict_cache = dictionary
+            self.searcher = Searcher(dictionary)
 
     def __call__(self,
                  line: int,
@@ -105,45 +127,47 @@ class _MatchToPredefinedAnswer(object):
 
         :returns: None, if the answer doesn't match anything; a dict entry string key, otherwise.
 
-        :raises AssertionError: If postprocessings list's empty.
+        :raises AssertionError: If the postprocessing list or the answer're empty.
         """
         assert postprocessings
+        assert not answer.is_empty
 
-        if synonim_dic is not self.__dict_cache:
-            self.__dict_cache = synonim_dic
-            self._dict_index = list(syn_dic.keys())
-            self.startingwith_re = re.compile(r'\b(' + r"|".join(sorted(synonim_dic.keys())) + r")\b")
+        self._update_searcher(synonim_dic)
 
         to_string = lambda a: " ".join(a)
         to_text_answer = lambda t, n: ("" if n else "нет ") + synonim_dic[to_string(t)]
 
-        archived_text = archived_neg = None
+        first_iter_result = None
 
         hypotheses = []
 
         Hypothesis = namedtuple("Hypothesis", ["text", "match", "postproc", "answer", "punct"])
 
-        if not answer.is_empty:
-            for remove_punct in (False, True):
-                for postprocess, name in postprocessings:
-                    cut_text, neg = postprocess(answer.get_lemmas(remove_punct, False))
-                    logging.info("Parsed (line {}): {} -> {}({})".format(line, answer._src, neg, cut_text))
-                    if archived_text is None:
-                        archived_text, archived_neg = cut_text, neg
-                    if to_string(cut_text) in synonim_dic:
-                        result = to_text_answer(cut_text, neg)
-                        hypotheses.append(Hypothesis(result, "exact", name, "full", not remove_punct))
-                    m = self.startingwith_re.findall(to_string(cut_text))
-                    if m:
-                        m.sort(key=lambda a: self._dict_index.index(a))
-                        logging.info("Prioritized tags: %s", ", ".join(m))
-                        result = ("" if neg else "нет ") + synonim_dic[m[0]]
-                        hypotheses.append(Hypothesis(result, "substring", name, "full", not remove_punct))
 
-            result = ("" if archived_neg else "нет ") + to_string(archived_text)
-            hypotheses.append(Hypothesis(result, "initial", None, None, None))
+        for remove_punct in (False, True):
+            for postprocess, name in postprocessings:
+                cut_text, neg = postprocess(answer.get_lemmas(remove_punct, False))
+                logging.info("Parsed (line {}): {} -> {}({})".format(line, answer._src, neg, cut_text))
 
-            return hypotheses
+                # Фксршмштп еру
+                if first_iter_result is not None:
+                    first_iter_result = ("" if neg else "нет ") + to_string(cut_text)
+                #
+                if to_string(cut_text) in synonim_dic:
+                    result = to_text_answer(cut_text, neg)
+                    hypotheses.append(Hypothesis(result, "exact", name, "full", not remove_punct))
+                m = self.searcher.search(to_string(cut_text))
+                if m:
+                    logging.info("Prioritized tags: %s", ", ".join(m))
+                    # result = ("" if neg else "нет ") + synonim_dic[m[0]]
+                    results = [("" if neg else "нет ") + synonim_dic[i] for i in m]
+                    results = [Hypothesis(r, "substring", name, "full", not remove_punct) for r in results]
+                    hypotheses.extend(results)
+
+        if first_iter_result:
+            hypotheses.append(Hypothesis(first_iter_result, "initial", None, None, None))
+
+        return hypotheses
 
 
 match_to_predefined_answer = _MatchToPredefinedAnswer()
@@ -174,7 +198,7 @@ def process_text_answer(answer, syn_matcher, num):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="A script producing statistics on respondents' likes and dislikes.")
-    parser.add_argument("like", metavar="STR", type=str, help="'like' or 'dislike'.")
+    parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike"])
     parser.add_argument("data_table", metavar="PATH", type=str, help="A path to a csv table containing the data.")
 
     parser.add_argument("-u", "--unprocessed", metavar="PATH", type=str,
