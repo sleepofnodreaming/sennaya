@@ -14,19 +14,19 @@ class Answer(object):
     """
     __russian_letter = re.compile(r"[а-яё]", flags=re.I)
 
-    def __init__(self, string):
+    def __init__(self, string, line=-1):
         """
         Create a new answer instance.
 
         :param string: a text of an answer 'as is'.
         """
+        self.line = line
         self._src = string.strip()
         lemmas = [(i.strip(), pos(i)) for i in mystem.lemmatize(self._src) if i.strip()]
         self._lemmas = list(itertools.dropwhile(lambda a: a[1] is None, lemmas))
         text = [i["text"] for i in mystem.analyze(self._src) if i["text"].strip()]
         self._text = text[len(text) - len(self._lemmas):]
         assert len(self._text) == len(self._lemmas), "A number of word forms is not equal to a number of lemmas."
-        # logging.info("New answer created, lemmas: {}".format(self._lemmas))
 
     def __len__(self):
         """
@@ -47,19 +47,6 @@ class Answer(object):
         """
         lemmas = [w for (w, p) in self._lemmas if not skip_punct or p]
         return " ".join(lemmas) if as_string else lemmas
-
-    def shorten(self):
-        """
-        Cut off anything following the first lemma without POS.
-
-        :return: A new instance of Answer with a shortemed lemma list.
-        """
-        for i, (l, p) in enumerate(self._lemmas):
-            if p is None:
-                shortened_answer = Answer(self._src)
-                shortened_answer._text, shortened_answer._lemmas = self._text[:i], self._lemmas[:i]
-                return shortened_answer
-        return self
 
     @property
     def is_empty(self):
