@@ -15,9 +15,10 @@ from readers import read_wordlists, read_csv_dictionaries, read_columns
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
-
 DISLIKES = [6, 14, 15]
 LIKES = [5, 12, 13]
+
+Hypothesis = namedtuple("Hypothesis", ["text", "match"])
 
 
 class HardPaths(object):
@@ -53,48 +54,26 @@ class HardPaths(object):
     )
 
 
-def convert_csv_dictionary(dic):
+def convert_csv_dictionary(dic: Union[Dict[str, set], OrderedDict[str, set]]) -> Dict[str, str]:
     assert issubclass(dic.__class__, dict)
     new_dict = dic.__class__()
     for k, v in dic.items():
         new_dict[k] = sorted(dic[k])[0]
     return new_dict
 
-def lemma_list_converter_factory(negations, ignorables):
-    """
-    A factory function producing a func matching a list of lemmas to a pair (main answer part, is negative)
-    according to dictionaries defined.
-
-    :param negations: A list of words to consider negations.
-    :param ignorables: A list of words to ignore in the start of a sentence.
-
-    :return: a func to use as a matching one.
-    """
-
-    parse_negations = NegationParser(negations, ignorables)
-
-    def default_func(lemmas):
-        text, is_neg = parse_negations(lemmas)
-        if len(text) > 1 and text[1] in ["пространство", "место"]:
-            text = text[:2]
-        return text, is_neg
-
-    def np_func(lemmas):
-        text, is_neg = parse_negations(lemmas)
-        cut_text = list(itertools.dropwhile(lambda a: pos(a) == "A", text))
-        return (cut_text, is_neg) if cut_text and pos(cut_text[0]) == "S" else (text, is_neg)
-
-    return [(default_func, "default"), (np_func, "np_cut")]
-
 
 class Searcher(object):
+    """
+    A class looking for word matches and generating a list of matches
+    sorted by priorities specified by an input ordered dict.
+    """
     def __init__(self, dictionary: OrderedDict):
         self._regexes = {
             word: re.compile(r"\b({})\b".format(word), flags=re.I) for word in dictionary.keys()
-        }
+            }
         self._order = {word: number for number, word in enumerate(dictionary.keys())}
 
-    def search(self, text):
+    def search(self, text: str) -> List[str]:
         indices = []
         for word, regex in self._regexes.items():
             for match in regex.finditer(text):
@@ -103,33 +82,31 @@ class Searcher(object):
         return [word for word, _, _ in indices]
 
 
-
 class _MatchToPredefinedAnswer(object):
+    """A class caching a dictionary not to compile regular expressions multiple times."""
     def __init__(self):
         self.__dict_cache = None
 
-    def _update_searcher(self, dictionary):
+    def _update_searcher(self, dictionary: OrderedDict):
         if dictionary is not self.__dict_cache:
             self.__dict_cache = dictionary
             self.searcher = Searcher(dictionary)
 
     def __call__(self,
-                 line: int,
                  answer: Answer,
-                 synonim_dic: Dict[str, str],
-                 postprocessings: List[Callable[[list], Tuple[str, bool]]]) -> Union[None, str]:
+                 synonim_dic: OrderedDict[str, str],
+                 postprocess: Callable[[list], Tuple[str, bool]]) -> List[Hypothesis]:
         """
         Match an answer to a dictionary entry, if possible.
 
         :param answer: An answer of a respondent.
         :param synonim_dic: A dictionary matching synonymic words to the same entry key.
-        :param postprocessings: A list of funcs converting a list of lemmas to a pair (dict key, negation).
+        :param postprocess: A func converting a list of lemmas to a pair (dict key, negation).
 
-        :returns: None, if the answer doesn't match anything; a dict entry string key, otherwise.
+        :returns: A list of hypotheses.
 
         :raises AssertionError: If the postprocessing list or the answer're empty.
         """
-        assert postprocessings
         assert not answer.is_empty
 
         self._update_searcher(synonim_dic)
@@ -137,72 +114,59 @@ class _MatchToPredefinedAnswer(object):
         to_string = lambda a: " ".join(a)
         to_text_answer = lambda t, n: ("" if n else "нет ") + synonim_dic[to_string(t)]
 
-        first_iter_result = None
-
         hypotheses = []
 
-        Hypothesis = namedtuple("Hypothesis", ["text", "match", "postproc", "answer", "punct"])
+        cut_text, neg = postprocess(answer.get_lemmas(False, False))
 
-
-        for remove_punct in (False, True):
-            for postprocess, name in postprocessings:
-                cut_text, neg = postprocess(answer.get_lemmas(remove_punct, False))
-                logging.info("Parsed (line {}): {} -> {}({})".format(line, answer._src, neg, cut_text))
-
-                # Фксршмштп еру
-                if first_iter_result is not None:
-                    first_iter_result = ("" if neg else "нет ") + to_string(cut_text)
-                #
-                if to_string(cut_text) in synonim_dic:
-                    result = to_text_answer(cut_text, neg)
-                    hypotheses.append(Hypothesis(result, "exact", name, "full", not remove_punct))
-                m = self.searcher.search(to_string(cut_text))
-                if m:
-                    logging.info("Prioritized tags: %s", ", ".join(m))
-                    # result = ("" if neg else "нет ") + synonim_dic[m[0]]
-                    results = [("" if neg else "нет ") + synonim_dic[i] for i in m]
-                    results = [Hypothesis(r, "substring", name, "full", not remove_punct) for r in results]
-                    hypotheses.extend(results)
-
-        if first_iter_result:
-            hypotheses.append(Hypothesis(first_iter_result, "initial", None, None, None))
-
+        logging.info("Negation detection: {} -> {}({})".format(answer._src, neg, cut_text))
+        # The first hypothesis is that a sequence of lemmas negated is an exact match,
+        # without going through a dictionary.
+        hypotheses.append(Hypothesis(("" if neg else "нет ") + to_string(cut_text), "initial"))
+        # The next hypothesis: the text may match any dictionary key as a whole.
+        if to_string(cut_text) in synonim_dic:
+            result = to_text_answer(cut_text, neg)
+            hypotheses.append(Hypothesis(result, "exact"))
+        # Finally, the text may contain key words.
+        matches = self.searcher.search(to_string(cut_text))
+        if matches:
+            results = [("" if neg else "нет ") + synonim_dic[i] for i in matches]
+            results = [Hypothesis(r, "substring") for r in results]
+            hypotheses.extend(results)
+        logging.info("Hypotheses generated: {}".format(", ".join("'%s'" % s[0] for s in hypotheses)))
         return hypotheses
 
 
-match_to_predefined_answer = _MatchToPredefinedAnswer()
-
-
-def _match_answer_to_category(ans, hypotheses, ready_answers, num):
+def process_text_answer(answer: Answer,
+                        syn_matcher: Callable[[Answer], List[Hypothesis]],
+                        ready_answers: dict,
+                        stop_after) -> bool:
+    hypotheses = syn_matcher(answer)
+    ready_answer = None
     for result in hypotheses:
         if ready_answers.get(result.text) is not None:
-            if result[-1] is not None:
-                logging.info(
-                    "Converted (line {0}) [{1.match} match, {1.postproc} postproc, {1.answer} answer]: {2} -> {1.text}".format(
-                        num, result, ans))
-            else:
-                logging.info("Not converted (line {}): {} -> {}".format(num, ans, result.text))
-
-            logging.info("Matched (line {}): {} -> {}".format(num, result.text, ready_answers[result.text]))
-            return ready_answers[result.text]
-
-
-def process_text_answer(answer, syn_matcher, num):
-    hypotheses = syn_matcher(answer)
-    ready_answer = _match_answer_to_category(answer._src, hypotheses, ready_answers, num)
+            logging.info("Matched: {} -> {}".format(
+                result.text,
+                ready_answers[result.text])
+            )
+            ready_answer = ready_answers[result.text]
+            break
+        elif result.text in stop_after:
+            logging.warning("Answer search stopped: {} in stop list.".format(result.text))
+            break
     if ready_answer:
         print(ready_answer)
+        logging.info("Processing path (matched): {} -> {} -> {}".format(answer._src, result.text, ready_answer))
         return True
     return False
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="A script producing statistics on respondents' likes and dislikes.")
-    parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike"])
-    parser.add_argument("data_table", metavar="PATH", type=str, help="A path to a csv table containing the data.")
+    parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike"], help="'like' or 'dislike'")
+    parser.add_argument("data_table", metavar="PATH", type=str, help="path to a csv table containing the data")
 
     parser.add_argument("-u", "--unprocessed", metavar="PATH", type=str,
-                        help="A path to a file to write unprocessed answers to.")
+                        help="path to a file to write unprocessed answers to")
 
     parsed = parser.parse_args()
     parsed.data_table = os.path.expanduser(os.path.abspath(parsed.data_table))
@@ -218,7 +182,7 @@ def parse_args():
 if __name__ == '__main__':
 
     parsed = parse_args()
-
+    # Initializing dictionaries.
     ready_answers = convert_csv_dictionary(read_csv_dictionaries([
         HardPaths.LIKE_MATCHING if parsed.like == "like" else HardPaths.DISLIKE_MATCHING,
     ], True))
@@ -226,38 +190,45 @@ if __name__ == '__main__':
     negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
                                 HardPaths.dictionaries)
 
+    # Initializing functions with the use of func factories.
     spellcheck = SpellcheckNorm("ru_RU", *[negations, ignorables])
+    negation_parser = NegationParser(negations, ignorables)
+    match_to_predefined_answer = _MatchToPredefinedAnswer()
+    synonym_matcher = lambda a: match_to_predefined_answer(a, syn_dic, negation_parser)
+
+    # TODO move this to a separate setting file:
+    STOP = [
+        "церковь",
+        "пешеходный переход",
+        "загазованность воздух",
+        "место отдых",
+        "снос ларек"
+    ]
 
     with open(parsed.unprocessed, "w") as unproc_file:
         for num, ans in read_columns(parsed.data_table, *(LIKES if parsed.like == "like" else DISLIKES)):
+            logging.info("Start processing answer: '{}' (line {})".format(ans, num))
             direct_match = ready_answers.get(ans.lower())
             if direct_match:
-                logging.info("Matched directly (line {}): {} -> {}".format(num, ans, direct_match))
+                logging.info("Processing path (matched directly): {} -> {}".format(ans, direct_match))
                 print(direct_match)
                 continue
 
-            synonym_matcher = lambda a: match_to_predefined_answer(
-                num,
-                a,
-                syn_dic,
-                lemma_list_converter_factory(negations, ignorables)
-            )
-
-            answer = Answer(ans)
+            answer = Answer(ans, num)
 
             if answer.is_empty:
-                logging.info("Skipped (line {}): {}".format(num, ans))
+                logging.info("Processing path (skipped): {}".format(ans))
                 continue
 
-            if not process_text_answer(answer, synonym_matcher, num):
-                logging.info("Trying spellcheck...")
+            if not process_text_answer(answer, synonym_matcher, ready_answers, STOP):
                 ans_norm = spellcheck(ans)
+                logging.info("Spellckeck: {} -> {}".format(ans, ans_norm))
                 if ans != ans_norm:
-                    logging.info("Spellckeck (line {}): {} -> {}".format(num, ans, ans_norm))
-                    answer = Answer(ans_norm)
+                    answer = Answer(ans_norm, num)
                     if not answer.is_empty:
-                        if not process_text_answer(answer, synonym_matcher, num):
+                        if not process_text_answer(answer, synonym_matcher, ready_answers, STOP):
                             print(ans.lower(), file=unproc_file)
+                            logging.info("Processing path (aborting): {}".format(ans))
                 else:
-                    logging.info("Spellcheck dropped.")
                     print(ans.lower(), file=unproc_file)
+                    logging.info("Processing path (aborting): {}".format(ans))
