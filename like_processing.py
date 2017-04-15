@@ -1,7 +1,6 @@
 #!/usr/local/bin/python3
 
 import argparse
-import itertools
 import logging
 import os
 import re
@@ -9,8 +8,8 @@ import sys
 from collections import namedtuple, OrderedDict
 from typing import Dict, Union, Callable, Tuple, List
 
-from answer import Answer
-from generalling import NegationParser, pos, SpellcheckNorm
+from answer import BaseAnswer, SimpleAnswer, FullSpellcheckAnswer, PartialSpellckeckAnswer
+from generalling import NegationParser
 from readers import read_wordlists, read_csv_dictionaries, read_columns
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
@@ -54,7 +53,7 @@ class HardPaths(object):
     )
 
 
-def convert_csv_dictionary(dic: Union[Dict[str, set], OrderedDict[str, set]]) -> Dict[str, str]:
+def convert_csv_dictionary(dic: Union[Dict[str, set], OrderedDict]) -> Dict[str, str]:
     assert issubclass(dic.__class__, dict)
     new_dict = dic.__class__()
     for k, v in dic.items():
@@ -93,8 +92,8 @@ class _MatchToPredefinedAnswer(object):
             self.searcher = Searcher(dictionary)
 
     def __call__(self,
-                 answer: Answer,
-                 synonim_dic: OrderedDict[str, str],
+                 answer: BaseAnswer,
+                 synonim_dic: OrderedDict,
                  postprocess: Callable[[list], Tuple[str, bool]]) -> List[Hypothesis]:
         """
         Match an answer to a dictionary entry, if possible.
@@ -107,7 +106,6 @@ class _MatchToPredefinedAnswer(object):
 
         :raises AssertionError: If the postprocessing list or the answer're empty.
         """
-        assert not answer.is_empty
 
         self._update_searcher(synonim_dic)
 
@@ -116,9 +114,9 @@ class _MatchToPredefinedAnswer(object):
 
         hypotheses = []
 
-        cut_text, neg = postprocess(answer.get_lemmas(False, False))
+        cut_text, neg = answer.apply_negation_parser(postprocess)
 
-        logging.info("Negation detection: {} -> {}({})".format(answer._src, neg, cut_text))
+        logging.info("Negation detection: {} -> {}({})".format(answer.src, neg, cut_text))
         # The first hypothesis is that a sequence of lemmas negated is an exact match,
         # without going through a dictionary.
         hypotheses.append(Hypothesis(("" if neg else "нет ") + to_string(cut_text), "initial"))
@@ -136,8 +134,8 @@ class _MatchToPredefinedAnswer(object):
         return hypotheses
 
 
-def process_text_answer(answer: Answer,
-                        syn_matcher: Callable[[Answer], List[Hypothesis]],
+def process_text_answer(answer: BaseAnswer,
+                        syn_matcher: Callable[[BaseAnswer], List[Hypothesis]],
                         ready_answers: dict,
                         stop_after) -> bool:
     hypotheses = syn_matcher(answer)
@@ -155,7 +153,7 @@ def process_text_answer(answer: Answer,
             break
     if ready_answer:
         print(ready_answer)
-        logging.info("Processing path (matched): {} -> {} -> {}".format(answer._src, result.text, ready_answer))
+        logging.info("Processing path (matched): {} -> {} -> {}".format(answer.src, result.text, ready_answer))
         return True
     return False
 
@@ -191,7 +189,6 @@ if __name__ == '__main__':
                                 HardPaths.dictionaries)
 
     # Initializing functions with the use of func factories.
-    spellcheck = SpellcheckNorm("ru_RU", *[negations, ignorables])
     negation_parser = NegationParser(negations, ignorables)
     match_to_predefined_answer = _MatchToPredefinedAnswer()
     synonym_matcher = lambda a: match_to_predefined_answer(a, syn_dic, negation_parser)
@@ -205,6 +202,12 @@ if __name__ == '__main__':
         "снос ларек"
     ]
 
+    ANSWER_TYPES = [
+        ("no spellcheck", SimpleAnswer),
+        ("partial spellcheck", PartialSpellckeckAnswer),
+        ("full spellcheck", FullSpellcheckAnswer),
+    ]
+
     with open(parsed.unprocessed, "w") as unproc_file:
         for num, ans in read_columns(parsed.data_table, *(LIKES if parsed.like == "like" else DISLIKES)):
             logging.info("Start processing answer: '{}' (line {})".format(ans, num))
@@ -214,21 +217,11 @@ if __name__ == '__main__':
                 print(direct_match)
                 continue
 
-            answer = Answer(ans, num)
-
-            if answer.is_empty:
-                logging.info("Processing path (skipped): {}".format(ans))
-                continue
-
-            if not process_text_answer(answer, synonym_matcher, ready_answers, STOP):
-                ans_norm = spellcheck(ans)
-                logging.info("Spellckeck: {} -> {}".format(ans, ans_norm))
-                if ans != ans_norm:
-                    answer = Answer(ans_norm, num)
-                    if not answer.is_empty:
-                        if not process_text_answer(answer, synonym_matcher, ready_answers, STOP):
-                            print(ans.lower(), file=unproc_file)
-                            logging.info("Processing path (aborting): {}".format(ans))
-                else:
-                    print(ans.lower(), file=unproc_file)
-                    logging.info("Processing path (aborting): {}".format(ans))
+            for type_name, answer_type in ANSWER_TYPES:
+                answer = answer_type(ans, include_punctuation=True)
+                logging.info("Try processing with %s, lemmas: %s", type_name, answer.to_lemmas())
+                if process_text_answer(answer, synonym_matcher, ready_answers, STOP):
+                    break
+            else:
+                print(ans.lower(), file=unproc_file)
+                logging.info("Processing path (aborting): {}".format(ans))
