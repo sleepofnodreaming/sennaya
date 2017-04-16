@@ -21,26 +21,11 @@ Hypothesis = namedtuple("Hypothesis", ["text", "match"])
 
 
 class HardPaths(object):
-    SYNONYM_DICT = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "dictionaries",
-        "likes",
-        "tagging_dict.csv"
-    )
-    LIKE_MATCHING = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "dictionaries",
-        "likes",
-        "manual",
-        "likes.csv"
-    )
-    DISLIKE_MATCHING = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "dictionaries",
-        "likes",
-        "manual",
-        "dislikes.csv"
-    )
+
+    SYNONYM_DICT = "tagging_dict.csv"
+    LIKE_MATCHING = "likes.csv"
+    DISLIKE_MATCHING = "dislikes.csv"
+
     LIKE_DICS = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "dictionaries",
@@ -162,13 +147,16 @@ def parse_args():
     parser = argparse.ArgumentParser(description="A script producing statistics on respondents' likes and dislikes.")
     parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike"], help="'like' or 'dislike'")
     parser.add_argument("data_table", metavar="PATH", type=str, help="path to a csv table containing the data")
+    parser.add_argument("dictionaries", metavar="PATH", type=str, help="path to specific dictionaries")
 
     parser.add_argument("-u", "--unprocessed", metavar="PATH", type=str,
                         help="path to a file to write unprocessed answers to")
 
     parsed = parser.parse_args()
     parsed.data_table = os.path.expanduser(os.path.abspath(parsed.data_table))
+    parsed.dictionaries = os.path.expanduser(os.path.abspath(parsed.dictionaries))
     assert os.path.isfile(parsed.data_table)
+    assert os.path.isdir(parsed.dictionaries)
     assert parsed.like in ("like", "dislike")
     if parsed.unprocessed:
         parsed.unprocessed = os.path.expanduser(os.path.abspath(parsed.unprocessed))
@@ -182,9 +170,9 @@ if __name__ == '__main__':
     parsed = parse_args()
     # Initializing dictionaries.
     ready_answers = convert_csv_dictionary(read_csv_dictionaries([
-        HardPaths.LIKE_MATCHING if parsed.like == "like" else HardPaths.DISLIKE_MATCHING,
+        os.path.join(parsed.dictionaries, HardPaths.LIKE_MATCHING if parsed.like == "like" else HardPaths.DISLIKE_MATCHING),
     ], True))
-    syn_dic = convert_csv_dictionary(read_csv_dictionaries([HardPaths.SYNONYM_DICT], False))
+    syn_dic = convert_csv_dictionary(read_csv_dictionaries([os.path.join(parsed.dictionaries, HardPaths.SYNONYM_DICT)], False))
     negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
                                 HardPaths.dictionaries)
 
