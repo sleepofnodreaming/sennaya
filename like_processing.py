@@ -1,6 +1,7 @@
 #!/usr/local/bin/python3
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -14,8 +15,6 @@ from readers import read_wordlists, read_csv_dictionaries, read_columns
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
-DISLIKES = [6, 14, 15]
-LIKES = [5, 12, 13]
 
 Hypothesis = namedtuple("Hypothesis", ["text", "match"])
 
@@ -26,6 +25,7 @@ class HardPaths(object):
     LIKE_MATCHING = "likes.csv"
     DISLIKE_MATCHING = "dislikes.csv"
     STOP_DICT = "stops.txt"
+    COLNUMS = "colnums.json"
 
     LIKE_DICS = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -186,6 +186,14 @@ if __name__ == '__main__':
         logging.critical("The directory %s does not contain stop dictionary", parsed.dictionaries)
         sys.exit(1)
 
+    path_to_colnums = os.path.join(parsed.dictionaries, HardPaths.COLNUMS)
+    if not os.path.isfile(path_to_answers):
+        logging.critical("The directory %s does not contain column listing file", parsed.dictionaries)
+        sys.exit(1)
+    with open(path_to_colnums) as f:
+        jsondic = json.loads(f.read())
+    colnums = jsondic[parsed.like]
+
     ready_answers = convert_csv_dictionary(read_csv_dictionaries([path_to_answers], True))
     syn_dic = convert_csv_dictionary(read_csv_dictionaries([path_to_synonyms], False))
     negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
@@ -204,7 +212,7 @@ if __name__ == '__main__':
     ]
 
     with open(parsed.unprocessed, "w") as unproc_file:
-        for num, ans in read_columns(parsed.data_table, *(LIKES if parsed.like == "like" else DISLIKES)):
+        for num, ans in read_columns(parsed.data_table, *colnums):
             logging.info("Start processing answer: '{}' (line {})".format(ans, num))
             direct_match = ready_answers.get(ans.lower())
             if direct_match:

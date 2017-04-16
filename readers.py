@@ -3,6 +3,7 @@ A collection of various readers for different types of files.
 """
 
 import csv
+import logging
 
 from typing import List, Tuple
 from collections import OrderedDict
@@ -66,12 +67,17 @@ def read_columns(fn: str, *columns: List[int]) -> List[Tuple[int, str]]:
 
     :return: A list of pairs (line number, answer text).
     """
-    # logging.info("Reading columns from table {}. Columns chosen: {}".format(fn, ", ".join(chr(ord("A") + i - 1) for i in columns)))
     answers = []
+    ignored_lines = set()
     with open(fn) as f:
         reader = csv.reader(f, delimiter=",")
         next(reader, None)
         for num, line in enumerate(reader):
+            line_snapshot = tuple(i.strip() for i in line[1:])
+            if line_snapshot in ignored_lines:
+                logging.warning("Line's a duplicate: %s", line_snapshot)
+                continue
+            ignored_lines.add(line_snapshot)
             line = [i.strip() for n, i in enumerate(line) if i.strip() and n + 1 in columns]
             answers.extend(((num + 2, i) for i in set(line)))
     return answers
