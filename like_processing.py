@@ -25,6 +25,7 @@ class HardPaths(object):
     SYNONYM_DICT = "tagging_dict.csv"
     LIKE_MATCHING = "likes.csv"
     DISLIKE_MATCHING = "dislikes.csv"
+    STOP_DICT = "stops.txt"
 
     LIKE_DICS = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -169,26 +170,32 @@ if __name__ == '__main__':
 
     parsed = parse_args()
     # Initializing dictionaries.
-    ready_answers = convert_csv_dictionary(read_csv_dictionaries([
-        os.path.join(parsed.dictionaries, HardPaths.LIKE_MATCHING if parsed.like == "like" else HardPaths.DISLIKE_MATCHING),
-    ], True))
-    syn_dic = convert_csv_dictionary(read_csv_dictionaries([os.path.join(parsed.dictionaries, HardPaths.SYNONYM_DICT)], False))
+    like_dislike = HardPaths.LIKE_MATCHING if parsed.like == "like" else HardPaths.DISLIKE_MATCHING
+    path_to_answers = os.path.join(parsed.dictionaries, like_dislike)
+    if not os.path.isfile(path_to_answers):
+        logging.critical("The directory %s does not contain %s dictionary", parsed.dictionaries, parsed.like)
+        sys.exit(1)
+
+    path_to_synonyms = os.path.join(parsed.dictionaries, HardPaths.SYNONYM_DICT)
+    if not os.path.isfile(path_to_answers):
+        logging.critical("The directory %s does not contain synonym dictionary", parsed.dictionaries)
+        sys.exit(1)
+
+    path_to_stops = os.path.join(parsed.dictionaries, HardPaths.STOP_DICT)
+    if not os.path.isfile(path_to_answers):
+        logging.critical("The directory %s does not contain stop dictionary", parsed.dictionaries)
+        sys.exit(1)
+
+    ready_answers = convert_csv_dictionary(read_csv_dictionaries([path_to_answers], True))
+    syn_dic = convert_csv_dictionary(read_csv_dictionaries([path_to_synonyms], False))
     negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
                                 HardPaths.dictionaries)
+    stops = read_wordlists([path_to_stops])
 
     # Initializing functions with the use of func factories.
     negation_parser = NegationParser(negations, ignorables)
     match_to_predefined_answer = _MatchToPredefinedAnswer()
     synonym_matcher = lambda a: match_to_predefined_answer(a, syn_dic, negation_parser)
-
-    # TODO move this to a separate setting file:
-    STOP = [
-        "церковь",
-        "пешеходный переход",
-        "загазованность воздух",
-        "место отдых",
-        "снос ларек"
-    ]
 
     ANSWER_TYPES = [
         ("no spellcheck", SimpleAnswer),
@@ -208,8 +215,8 @@ if __name__ == '__main__':
             for type_name, answer_type in ANSWER_TYPES:
                 answer = answer_type(ans, include_punctuation=True)
                 logging.info("Try processing with %s, lemmas: %s", type_name, answer.to_lemmas())
-                if process_text_answer(answer, synonym_matcher, ready_answers, STOP):
+                if process_text_answer(answer, synonym_matcher, ready_answers, stops):
                     break
             else:
-                print(ans.lower(), file=unproc_file)
+                print(ans, file=unproc_file)
                 logging.info("Processing path (aborting): {}".format(ans))
