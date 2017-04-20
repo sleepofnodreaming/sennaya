@@ -185,4 +185,4 @@ class PartialSpellckeckAnswer(SimpleAnswer, FullSpellcheckAnswer):
         cut_words, neg = parsing_func(normalized_lemmas)
         real_lemmas = SimpleAnswer.to_lemmas(self)
         assert len(normalized_lemmas) == len(real_lemmas), "Incorrect processing of spellcheck."
-        return real_lemmas[len(cut_words):], neg
+        return real_lemmas[-len(cut_words):], neg

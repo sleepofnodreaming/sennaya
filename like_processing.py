@@ -120,28 +120,57 @@ class _MatchToPredefinedAnswer(object):
         return hypotheses
 
 
-def process_text_answer(answer: BaseAnswer,
-                        syn_matcher: Callable[[BaseAnswer], List[Hypothesis]],
-                        ready_answers: dict,
-                        stop_after) -> bool:
-    hypotheses = syn_matcher(answer)
-    ready_answer = None
-    for result in hypotheses:
-        if ready_answers.get(result.text) is not None:
-            logging.info("Matched: {} -> {}".format(
-                result.text,
-                ready_answers[result.text])
-            )
-            ready_answer = ready_answers[result.text]
-            break
-        elif result.text in stop_after:
-            logging.warning("Answer search stopped: {} in stop list.".format(result.text))
-            break
-    if ready_answer:
-        print(ready_answer)
-        logging.info("Processing path (matched): {} -> {} -> {}".format(answer.src, result.text, ready_answer))
-        return True
-    return False
+class TextAnswerProcessor(object):
+    @staticmethod
+    def to_priority_answer(answer: BaseAnswer,
+                           syn_matcher: Callable[[BaseAnswer], List[Hypothesis]],
+                           ready_answers: dict,
+                           stop_after) -> bool:
+        hypotheses = syn_matcher(answer)
+        ready_answer = None
+        for result in hypotheses:
+            if ready_answers.get(result.text) is not None:
+                logging.info("Matched: {} -> {}".format(
+                    result.text,
+                    ready_answers[result.text])
+                )
+                ready_answer = ready_answers[result.text]
+                break
+            elif result.text in stop_after:
+                logging.warning("Answer search stopped: {} in stop list.".format(result.text))
+                break
+        if ready_answer:
+            print(ready_answer)
+            logging.info("Processing path (matched): {} -> {} -> {}".format(answer.src, result.text, ready_answer))
+            return True
+        return False
+
+    @staticmethod
+    def to_all_options(answer: BaseAnswer,
+                            syn_matcher: Callable[[BaseAnswer], List[Hypothesis]],
+                            ready_answers: dict,
+                            stop_after) -> bool:
+        hypotheses = syn_matcher(answer)
+        answers = set()
+        ready_answer = None
+        for result in hypotheses:
+            if ready_answers.get(result.text) is not None:
+                logging.info("Matched: {} -> {}".format(
+                    result.text,
+                    ready_answers[result.text])
+                )
+                ready_answer = ready_answers[result.text]
+                if ready_answer not in answers:
+                    print(ready_answer)
+                    answers.add(ready_answer)
+                    logging.info("Processing path (matched): {} -> {} -> {}".format(answer.src, result.text, ready_answer))
+
+            elif result.text in stop_after:
+                logging.warning("Answer search stopped: {} in stop list.".format(result.text))
+                break
+        if ready_answer:
+            return True
+        return False
 
 
 def parse_args():
@@ -223,7 +252,7 @@ if __name__ == '__main__':
             for type_name, answer_type in ANSWER_TYPES:
                 answer = answer_type(ans, include_punctuation=True)
                 logging.info("Try processing with %s, lemmas: %s", type_name, answer.to_lemmas())
-                if process_text_answer(answer, synonym_matcher, ready_answers, stops):
+                if TextAnswerProcessor.to_all_options(answer, synonym_matcher, ready_answers, stops):
                     break
             else:
                 print(ans, file=unproc_file)
