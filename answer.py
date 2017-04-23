@@ -28,7 +28,7 @@ class Answer(object):
         self.line = line
         self._src = string.strip()
         lemmas = [(i.strip(), pos(i)) for i in mystem.lemmatize(self._src) if i.strip()]
-        self._lemmas = list(itertools.dropwhile(lambda a: a[1] is None, lemmas))
+        self._lemmas = list(itertools.dropwhile(lambda a: all(not i.isalpha() for i in a[0] or not a[0]), lemmas))
         text = [i["text"] for i in mystem.analyze(self._src) if i["text"].strip()]
         self._text = text[len(text) - len(self._lemmas):]
         assert len(self._text) == len(self._lemmas), "A number of word forms is not equal to a number of lemmas."
