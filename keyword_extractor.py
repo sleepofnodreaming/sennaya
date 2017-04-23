@@ -3,6 +3,7 @@
 import argparse
 import csv
 import os
+import logging
 import re
 import sys
 from collections import Counter
@@ -13,6 +14,9 @@ from nltk.text import TextCollection
 from pymystem3 import Mystem
 
 from generalling import pos
+
+logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
+
 
 GLOBAL_MYSTEM = Mystem()
 
@@ -79,6 +83,7 @@ def csv_to_lemmas(fn, column_number, skip_nonalpha=False, pattern=lambda a: a):
                 continue
             value = line[column_number]
             lemmas = pattern([i.strip() for i in ms.lemmatize(value) if i.strip()])
+            logging.info("%s -> %s", value, " ".join(lemmas))
             if skip_nonalpha:
                 lemmas = list(filter(lambda i: not re.search(r'^[\W]+$', i), lemmas))
             texts.append(lemmas)
