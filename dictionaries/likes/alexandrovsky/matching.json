@@ -1,0 +1,12 @@
+{
+  "like": {
+    "concepts": "tagging_dict.csv",
+    "categories": "likes.csv",
+    "stop_markers": "stops.txt"
+  },
+  "dislike": {
+    "concepts": "tagging_dict.csv",
+    "categories": "dislikes.csv",
+    "stop_markers": "stops.txt"
+  }
+}

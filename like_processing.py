@@ -21,10 +21,7 @@ Hypothesis = namedtuple("Hypothesis", ["text", "match"])
 
 class HardPaths(object):
 
-    SYNONYM_DICT = "tagging_dict.csv"
-    LIKE_MATCHING = "likes.csv"
-    DISLIKE_MATCHING = "dislikes.csv"
-    STOP_DICT = "stops.txt"
+    MATCHING = "matching.json"
     COLNUMS = "colnums.json"
 
     LIKE_DICS = os.path.join(
@@ -195,26 +192,32 @@ def parse_args():
     return parsed
 
 
+def get_dictionary_paths(directory, for_case):
+    full_path = os.path.join(directory, HardPaths.MATCHING)
+    if not os.path.exists(full_path):
+        logging.critical("Matching file %s does not exist in %s", HardPaths.MATCHING, directory)
+        return {}
+    with open(full_path) as f:
+        data = json.loads(f.read())
+        if for_case not in data:
+            logging.critical("Dictionaries for parameter %s are not specified", for_case)
+            return {}
+    absolute_paths = {k: os.path.join(directory, v) for k, v in data[for_case].items()}
+    if any(not os.path.exists(i) for i in absolute_paths.values()):
+        logging.critical("Some dictionaries specified do not exist")
+    return absolute_paths
+
+
 if __name__ == '__main__':
 
     parsed = parse_args()
     # Initializing dictionaries.
-    like_dislike = HardPaths.LIKE_MATCHING if parsed.like == "like" else HardPaths.DISLIKE_MATCHING
-    path_to_answers = os.path.join(parsed.dictionaries, like_dislike)
-    if not os.path.isfile(path_to_answers):
-        logging.critical("The directory %s does not contain %s dictionary", parsed.dictionaries, parsed.like)
+    dictionary_paths = get_dictionary_paths(parsed.dictionaries, parsed.like)
+    if not dictionary_paths:
         sys.exit(1)
-
-    path_to_synonyms = os.path.join(parsed.dictionaries, HardPaths.SYNONYM_DICT)
-    if not os.path.isfile(path_to_answers):
-        logging.critical("The directory %s does not contain synonym dictionary", parsed.dictionaries)
-        sys.exit(1)
-
-    path_to_stops = os.path.join(parsed.dictionaries, HardPaths.STOP_DICT)
-    if not os.path.isfile(path_to_answers):
-        logging.critical("The directory %s does not contain stop dictionary", parsed.dictionaries)
-        sys.exit(1)
-
+    path_to_answers = dictionary_paths["categories"]
+    path_to_synonyms = dictionary_paths["concepts"]
+    path_to_stops = dictionary_paths["stop_markers"]
     path_to_colnums = os.path.join(parsed.dictionaries, HardPaths.COLNUMS)
     if not os.path.isfile(path_to_answers):
         logging.critical("The directory %s does not contain column listing file", parsed.dictionaries)
@@ -252,7 +255,7 @@ if __name__ == '__main__':
             for type_name, answer_type in ANSWER_TYPES:
                 answer = answer_type(ans, include_punctuation=True)
                 logging.info("Try processing with %s, lemmas: %s", type_name, answer.to_lemmas())
-                if TextAnswerProcessor.to_all_options(answer, synonym_matcher, ready_answers, stops):
+                if TextAnswerProcessor.to_priority_answer(answer, synonym_matcher, ready_answers, stops):
                     break
             else:
                 print(ans, file=unproc_file)
