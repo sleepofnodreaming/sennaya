@@ -1,11 +1,11 @@
 {
   "like": {
-    "concepts": "tagging_dict.csv",
+    "concepts": "concepts_likes.csv",
     "categories": "likes.csv",
     "stop_markers": "stops.txt"
   },
   "dislike": {
-    "concepts": "tagging_dict.csv",
+    "concepts": "concepts_dislikes.csv",
     "categories": "dislikes.csv",
     "stop_markers": "stops.txt"
   }
