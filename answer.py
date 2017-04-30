@@ -116,7 +116,7 @@ class BaseAnswer(object, metaclass=abc.ABCMeta):
             else not bool(self._raw_words[num].strip())
             for num in range(len(full_data))
             ]
-        self._full_data = full_data
+        self.full_data = full_data
 
     @abc.abstractmethod
     def to_lemmas(self):
@@ -135,7 +135,7 @@ class SimpleAnswer(BaseAnswer):
         lemmas = [
             wd["analysis"][0]["lex"] if self._has_analysis[num]
             else wd["text"]
-            for num, wd in enumerate(self._full_data)
+            for num, wd in enumerate(self.full_data)
             ]
         if self.include_punctuation:
             return [wd.strip().lower() for num, wd in enumerate(lemmas) if not self._is_whitespace[num]]
@@ -150,9 +150,9 @@ class FullSpellcheckAnswer(BaseAnswer):
     @property
     def _are_questionable(self):
         return [
-            True if self._has_analysis[num] and self._full_data[num]["analysis"][0].get("qual") == "bastard"
+            True if self._has_analysis[num] and self.full_data[num]["analysis"][0].get("qual") == "bastard"
             else False
-            for num in range(len(self._full_data))
+            for num in range(len(self.full_data))
             ]
 
     def to_lemmas(self):
@@ -160,7 +160,7 @@ class FullSpellcheckAnswer(BaseAnswer):
         analyses = [
             self._mystem.analyze(wd)[:-1]
             if self._has_analysis[num] and spellchecked_words[num] != self._raw_words[num]
-            else [self._full_data[num]]
+            else [self.full_data[num]]
             for num, wd in enumerate(spellchecked_words)
             ]
         lemmas = [
@@ -176,13 +176,13 @@ class FullSpellcheckAnswer(BaseAnswer):
             return [wd.strip().lower() for num, wd in enumerate(lemmas) if self._has_analysis[num]]
 
 
-class PartialSpellckeckAnswer(SimpleAnswer, FullSpellcheckAnswer):
-    def to_lemmas(self):
-        return SimpleAnswer.to_lemmas(self)
-
-    def apply_negation_parser(self, parsing_func):
-        normalized_lemmas = FullSpellcheckAnswer.to_lemmas(self)
-        cut_words, neg = parsing_func(normalized_lemmas)
-        real_lemmas = SimpleAnswer.to_lemmas(self)
-        assert len(normalized_lemmas) == len(real_lemmas), "Incorrect processing of spellcheck."
-        return real_lemmas[-len(cut_words):], neg
+# class PartialSpellckeckAnswer(SimpleAnswer, FullSpellcheckAnswer):
+#     def to_lemmas(self):
+#         return SimpleAnswer.to_lemmas(self)
+#
+#     def apply_negation_parser(self, parsing_func):
+#         normalized_lemmas = FullSpellcheckAnswer.to_lemmas(self)
+#         cut_words, neg = parsing_func(normalized_lemmas)
+#         real_lemmas = SimpleAnswer.to_lemmas(self)
+#         assert len(normalized_lemmas) == len(real_lemmas), "Incorrect processing of spellcheck."
+#         return real_lemmas[-len(cut_words):], neg

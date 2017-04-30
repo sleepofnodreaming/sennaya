@@ -1,17 +1,23 @@
 #!/usr/local/bin/python3
 
 import argparse
+import csv
+import itertools
 import json
 import logging
+import nltk
 import os
 import re
 import sys
-from collections import namedtuple, OrderedDict
-from typing import Dict, Union, Callable, Tuple, List
 
-from answer import BaseAnswer, SimpleAnswer, FullSpellcheckAnswer, PartialSpellckeckAnswer
+
+from collections import namedtuple, OrderedDict
+from typing import Dict, Union, List
+
+from answer import SimpleAnswer, FullSpellcheckAnswer
 from generalling import NegationParser
 from readers import read_wordlists, read_csv_dictionaries, read_columns
+
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
@@ -75,9 +81,10 @@ class _MatchToPredefinedAnswer(object):
             self.searcher = Searcher(dictionary)
 
     def __call__(self,
-                 answer: BaseAnswer,
+                 answer: str,
+                 answer_class: type,
                  synonim_dic: OrderedDict,
-                 postprocess: Callable[[list], Tuple[str, bool]]) -> List[Hypothesis]:
+                 postprocess) -> List[Hypothesis]:
         """
         Match an answer to a dictionary entry, if possible.
 
@@ -92,80 +99,58 @@ class _MatchToPredefinedAnswer(object):
 
         self._update_searcher(synonim_dic)
 
-        to_string = lambda a: " ".join(a)
-        to_text_answer = lambda t, n: ("" if n else "нет ") + synonim_dic[to_string(t)]
-
         hypotheses = []
 
-        cut_text, neg = answer.apply_negation_parser(postprocess)
-
-        logging.info("Negation detection: {} -> {}({})".format(answer.src, neg, cut_text))
-        # The first hypothesis is that a sequence of lemmas negated is an exact match,
-        # without going through a dictionary.
-        hypotheses.append(Hypothesis(("" if neg else "нет ") + to_string(cut_text), "initial"))
-        # The next hypothesis: the text may match any dictionary key as a whole.
-        if to_string(cut_text) in synonim_dic:
-            result = to_text_answer(cut_text, neg)
-            hypotheses.append(Hypothesis(result, "exact"))
-        # Finally, the text may contain key words.
-        matches = self.searcher.search(to_string(cut_text))
-        if matches:
-            results = [("" if neg else "нет ") + synonim_dic[i] for i in matches]
-            results = [Hypothesis(r, "substring") for r in results]
-            hypotheses.extend(results)
-        logging.info("Hypotheses generated: {}".format(", ".join("'%s'" % s[0] for s in hypotheses)))
+        sentence_parts = postprocess.to_chunks(answer, answer_class)
+        for part, neg in sentence_parts:
+            logging.info("Part extracted: {} -> {}({})".format(answer, neg, part))
+            matches = self.searcher.search(part)
+            if matches:
+                results = [("" if neg else "нет ") + synonim_dic[i] for i in matches]
+                results = [Hypothesis(r, "substring") for r in results]
+                logging.info("Hypotheses generated: {}".format(", ".join("'%s'" % s[0] for s in results)))
+                hypotheses.append(results)
         return hypotheses
 
 
 class TextAnswerProcessor(object):
+
     @staticmethod
-    def to_priority_answer(answer: BaseAnswer,
-                           syn_matcher: Callable[[BaseAnswer], List[Hypothesis]],
+    def to_sentences(text):
+        standard_sent = nltk.sent_tokenize(text)
+        return list(
+            filter(lambda a: a, itertools.chain(*[map(lambda a: a.strip(), i.split(";")) for i in standard_sent])))
+
+    @staticmethod
+    def to_priority_answer(answer: str,
+                           answer_type,
+                           syn_matcher,
                            ready_answers: dict,
                            stop_after) -> bool:
-        hypotheses = syn_matcher(answer)
-        ready_answer = None
-        for result in hypotheses:
-            if ready_answers.get(result.text) is not None:
-                logging.info("Matched: {} -> {}".format(
-                    result.text,
-                    ready_answers[result.text])
-                )
-                ready_answer = ready_answers[result.text]
-                break
-            elif result.text in stop_after:
-                logging.warning("Answer search stopped: {} in stop list.".format(result.text))
-                break
-        if ready_answer:
-            print(ready_answer)
-            logging.info("Processing path (matched): {} -> {} -> {}".format(answer.src, result.text, ready_answer))
-            return True
-        return False
 
-    @staticmethod
-    def to_all_options(answer: BaseAnswer,
-                            syn_matcher: Callable[[BaseAnswer], List[Hypothesis]],
-                            ready_answers: dict,
-                            stop_after) -> bool:
-        hypotheses = syn_matcher(answer)
-        answers = set()
-        ready_answer = None
-        for result in hypotheses:
-            if ready_answers.get(result.text) is not None:
-                logging.info("Matched: {} -> {}".format(
-                    result.text,
-                    ready_answers[result.text])
-                )
-                ready_answer = ready_answers[result.text]
-                if ready_answer not in answers:
-                    print(ready_answer)
-                    answers.add(ready_answer)
-                    logging.info("Processing path (matched): {} -> {} -> {}".format(answer.src, result.text, ready_answer))
+        sentences = TextAnswerProcessor.to_sentences(answer)
+        logging.info("Split into sentences: %s -> %s", answer, sentences)
 
-            elif result.text in stop_after:
-                logging.warning("Answer search stopped: {} in stop list.".format(result.text))
-                break
-        if ready_answer:
+        all_hypotheses = set()
+
+        for sentence in sentences:
+            hypotheses = syn_matcher(sentence, answer_type)
+
+            for hypotheses_per_chunk in hypotheses:
+                for result in hypotheses_per_chunk:
+                    if ready_answers.get(result.text) is not None:
+                        logging.info("Matched: {} -> {}".format(
+                            result.text,
+                            ready_answers[result.text])
+                        )
+                        all_hypotheses.add(ready_answers[result.text])
+                        break
+                    elif result.text in stop_after:
+                        logging.warning("Answer search stopped: {} in stop list.".format(result.text))
+                        break
+        if all_hypotheses:
+            for ans in all_hypotheses: print(ans)
+            logging.info("Processing path (matched): {} -> {} -> {}".format(answer, sentences, ", ".join(all_hypotheses)))
             return True
         return False
 
@@ -208,6 +193,13 @@ def get_dictionary_paths(directory, for_case):
     return absolute_paths
 
 
+def read_negs(filename):
+    with open(filename) as f:
+        reader = csv.reader(f, delimiter=",")
+        dictionary = [(word, geni) for word, *geni in filter(lambda a: a, reader)]
+    return OrderedDict(dictionary)
+
+
 if __name__ == '__main__':
 
     parsed = parse_args()
@@ -228,34 +220,32 @@ if __name__ == '__main__':
 
     ready_answers = convert_csv_dictionary(read_csv_dictionaries([path_to_answers], True))
     syn_dic = convert_csv_dictionary(read_csv_dictionaries([path_to_synonyms], False))
-    negations, ignorables = map(lambda a: read_wordlists([os.path.join(HardPaths.LIKE_DICS, a)], False),
-                                HardPaths.dictionaries)
+    negations, ignorables = read_negs(os.path.join(HardPaths.LIKE_DICS, "negations.txt")), read_negs(os.path.join(HardPaths.LIKE_DICS, "ignorables.txt"))
     stops = read_wordlists([path_to_stops])
 
-    # Initializing functions with the use of func factories.
+    # # Initializing functions with the use of func factories.
     negation_parser = NegationParser(negations, ignorables)
     match_to_predefined_answer = _MatchToPredefinedAnswer()
-    synonym_matcher = lambda a: match_to_predefined_answer(a, syn_dic, negation_parser)
+    synonym_matcher = lambda a, ac: match_to_predefined_answer(a, ac, syn_dic, negation_parser)
 
     ANSWER_TYPES = [
         ("no spellcheck", SimpleAnswer),
-        ("partial spellcheck", PartialSpellckeckAnswer),
         ("full spellcheck", FullSpellcheckAnswer),
     ]
 
     with open(parsed.unprocessed, "w") as unproc_file:
         for num, ans in read_columns(parsed.data_table, *colnums):
+
             logging.info("Start processing answer: '{}' (line {})".format(ans, num))
-            direct_match = ready_answers.get(ans.lower())
+            direct_match = ready_answers.get(ans.lower()) or ready_answers.get(ans)
             if direct_match:
                 logging.info("Processing path (matched directly): {} -> {}".format(ans, direct_match))
                 print(direct_match)
                 continue
 
             for type_name, answer_type in ANSWER_TYPES:
-                answer = answer_type(ans, include_punctuation=True)
-                logging.info("Try processing with %s, lemmas: %s", type_name, answer.to_lemmas())
-                if TextAnswerProcessor.to_priority_answer(answer, synonym_matcher, ready_answers, stops):
+                logging.info("Try processing with %s, chunk: %s", type_name, type_name)
+                if TextAnswerProcessor.to_priority_answer(ans, answer_type, synonym_matcher, ready_answers, stops):
                     break
             else:
                 print(ans, file=unproc_file)

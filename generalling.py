@@ -16,45 +16,88 @@ class NegationParser(object):
     """
     A class working as a factory of functions parsing negations.
     """
-    def __init__(self, negation_dict: List[str], ignoring_dict: Union[List[str], None]):
+    def __init__(self, negation_dict: dict, ignoring_dict: Union[dict, None]):
         self._negation_dict = negation_dict
         self._ignoring_dict = ignoring_dict
-        self._neg_cut = re.compile(r'\b(' + r'|'.join(self._negation_dict) + r')\b')
-        self._ignor_cut = None if self._ignoring_dict else re.compile(r'\b(' + r'|'.join(self._ignoring_dict) + r')\b')
+        self._neg_cut = re.compile(r'\b(' + r'|'.join(self._negation_dict.keys()) + r')\b')
+        self._ignor_cut = None if self._ignoring_dict else re.compile(r'\b(' + r'|'.join(self._ignoring_dict.keys()) + r')\b')
 
     @staticmethod
     def _cut_with_re(string, regex):
         if regex is None:
-            return string
+            return string, None
         m = regex.match(string)
-        return string if not m else string[len(m.group(1)):]
+        return (string.lstrip(), None) if not m else (string[len(m.group(1)):], m.group(1))
 
-    def __call__(self, lemmas: list) -> list:
-        text, update_text = " ".join(lemmas), None
+    def parse_negations(self, lemmas: list) -> list:
+        text, update_text, last = " ".join(lemmas).lower(), None, None
         neg = True
+        final_last = None
         while update_text != text:
             if update_text is not None:
                 text = update_text
-            if neg:
-                update_text = self._cut_with_re(text, self._neg_cut).lstrip()
-                if update_text != text:
-                    neg = False
-            update_text = self._cut_with_re(update_text, self._ignor_cut).lstrip()
-        return update_text.split(), neg
+            update_text, last = self._cut_with_re(text, self._neg_cut)
+            if last: final_last = last
+            if update_text != text: neg = False
+            if self._ignor_cut is not None:
+                update_text, last = self._cut_with_re(update_text, self._ignor_cut)
+                if last: final_last = last
 
+        if final_last in self._negation_dict:
+            previous_grammars = self._negation_dict[final_last]
+        else:
+            previous_grammars = self._ignoring_dict.get(final_last, [])
 
-def parse_negations(lemmas: list, dictionary: list, ignored: Union[None, list] = None) -> Tuple[list, bool]:
-    """
-    A deprecated wrapper for NegationParser factory.
+        return update_text, neg, previous_grammars
 
-    :param lemmas: A list of lemmas representing a text.
-    :param dictionary: A list of negations.
-    :param ignored: A list of words to ignore.
+    def to_chunks(self, sentence, chunk_constructor):
 
-    :return: A tuple of two: (a list of lemmas, flag whether a negation was detected and removed).
-    """
-    neg_parser = NegationParser(dictionary, ignored)
-    return neg_parser(lemmas)
+        def grammar_is_analogous_to(previous_grammars, full_data):
+            for word in full_data:
+                analysis = word.get("analysis")
+                if not analysis:
+                    continue
+                grammar = analysis[0].get("gr", "")
+                if any(i in grammar for i in previous_grammars):
+                    return True
+            return False
+
+        supposed_parts = re.split(r'(?<!\b\w)\s*(?:[,]+| -)(?! (?:котор|\w{1,3}\s+котор|где|что|а |как))', sentence,
+                                  flags=re.I)
+        supposed_parts = list(map(lambda a: a.strip(), supposed_parts))
+
+        resulting_chunks, current_chunk, chunk_is_positive, previous_grammars = [], [], True, None
+        for chunk in supposed_parts:
+            sentence_part = chunk_constructor(chunk, True)
+            words, is_negative, last_part_grammars = sentence_part.apply_negation_parser(lambda a: self.parse_negations(a))
+
+            if not is_negative:
+                if current_chunk:
+                    resulting_chunks.append((" , ".join(current_chunk), chunk_is_positive))
+                current_chunk, chunk_is_positive, previous_grammars = [words], is_negative, last_part_grammars
+            else:
+                if not current_chunk:
+                    current_chunk, chunk_is_positive, previous_grammars = [words], is_negative, last_part_grammars
+
+                else:
+                    if previous_grammars is None or last_part_grammars is not None:
+                        if current_chunk:
+                            resulting_chunks.append((" , ".join(current_chunk), chunk_is_positive))
+                        current_chunk, chunk_is_positive, previous_grammars = [words], is_negative, last_part_grammars
+                        continue
+
+                    if grammar_is_analogous_to(previous_grammars, sentence_part.full_data):
+                        if not chunk_is_positive:
+                            resulting_chunks.append((" , ".join(current_chunk), chunk_is_positive))
+                            current_chunk = [words]
+                        else:
+                            current_chunk.append(words)
+                    else:
+                        resulting_chunks.append((" , ".join(current_chunk), chunk_is_positive))
+                        current_chunk, chunk_is_positive, previous_grammars = [words], is_negative, last_part_grammars
+        if current_chunk:
+            resulting_chunks.append((" , ".join(current_chunk), chunk_is_positive))
+        return resulting_chunks
 
 
 def pos(wd, analyzer=GLOBAL_MYSTEM):
