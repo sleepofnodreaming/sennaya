@@ -157,7 +157,7 @@ class TextAnswerProcessor(object):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="A script producing statistics on respondents' likes and dislikes.")
-    parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike"], help="'like' or 'dislike'")
+    parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike", "place"], help="'like' or 'dislike'")
     parser.add_argument("data_table", metavar="PATH", type=str, help="path to a csv table containing the data")
     parser.add_argument("dictionaries", metavar="PATH", type=str, help="path to specific dictionaries")
 
@@ -169,7 +169,6 @@ def parse_args():
     parsed.dictionaries = os.path.expanduser(os.path.abspath(parsed.dictionaries))
     assert os.path.isfile(parsed.data_table)
     assert os.path.isdir(parsed.dictionaries)
-    assert parsed.like in ("like", "dislike")
     if parsed.unprocessed:
         parsed.unprocessed = os.path.expanduser(os.path.abspath(parsed.unprocessed))
     else:
