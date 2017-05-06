@@ -22,7 +22,7 @@ from readers import read_wordlists, read_csv_dictionaries, read_columns
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
 
-Hypothesis = namedtuple("Hypothesis", ["text", "match"])
+Hypothesis = namedtuple("Hypothesis", ["text", "match", "source_path"])
 
 
 class HardPaths(object):
@@ -107,7 +107,7 @@ class _MatchToPredefinedAnswer(object):
             matches = self.searcher.search(part)
             if matches:
                 results = [("" if neg else "нет ") + synonim_dic[i] for i in matches]
-                results = [Hypothesis(r, "substring") for r in results]
+                results = [Hypothesis(r, "substring", (part, neg)) for r in results]
                 logging.info("Hypotheses generated: {}".format(", ".join("'%s'" % s[0] for s in results)))
                 hypotheses.append(results)
         return hypotheses
@@ -132,6 +132,7 @@ class TextAnswerProcessor(object):
         logging.info("Split into sentences: %s -> %s", answer, sentences)
 
         all_hypotheses = set()
+        data_sources = []
 
         for sentence in sentences:
             hypotheses = syn_matcher(sentence, answer_type)
@@ -144,13 +145,18 @@ class TextAnswerProcessor(object):
                             ready_answers[result.text])
                         )
                         all_hypotheses.add(ready_answers[result.text])
+                        data_sources.append(result.source_path)
                         break
                     elif result.text in stop_after:
                         logging.warning("Answer search stopped: {} in stop list.".format(result.text))
                         break
         if all_hypotheses:
             for ans in all_hypotheses: print(ans)
-            logging.info("Processing path (matched): {} -> {} -> {}".format(answer, sentences, ", ".join(all_hypotheses)))
+            logging.info("Processing path (matched): {} -> {} -> {}".format(
+                answer,
+                ", ".join("{}({})".format(i[1], i[0]) for i in data_sources),
+                ", ".join(all_hypotheses))
+            )
             return True
         return False
 
