@@ -21,6 +21,7 @@ class NegationParser(object):
         self._ignoring_dict = ignoring_dict
         self._neg_cut = re.compile(r'\b(' + r'|'.join(self._negation_dict.keys()) + r')\b')
         self._ignor_cut = None if self._ignoring_dict else re.compile(r'\b(' + r'|'.join(self._ignoring_dict.keys()) + r')\b')
+        self._nps = re.compile(r'(?<!\b\w)\s*(?:[,]+| -)(?! (?:котор|\w{1,3}\s+котор|где|что|а |как))', flags=re.I)
 
     @staticmethod
     def _cut_with_re(string, regex):
@@ -62,9 +63,21 @@ class NegationParser(object):
                     return True
             return False
 
-        supposed_parts = re.split(r'(?<!\b\w)\s*(?:[,]+| -)(?! (?:котор|\w{1,3}\s+котор|где|что|а |как))', sentence,
-                                  flags=re.I)
-        supposed_parts = list(map(lambda a: a.strip(), supposed_parts))
+        def reorganize_nom_chunks(chunk):
+            if " и " not in chunk:
+                return [chunk]
+            subchunks = chunk.split(" и ")
+            for subchunk in subchunks:
+                chunk_part = chunk_constructor(subchunk, True)
+                nouns = list(filter(lambda gr: "S" in gr, chunk_part.grammars()))
+                if not nouns:
+                    return [chunk]
+                if not all("им" in i for i in nouns):
+                    return [chunk]
+            return subchunks
+
+        supposed_parts = list(map(lambda a: a.strip(), self._nps.split(sentence)))
+        supposed_parts = itertools.chain.from_iterable(reorganize_nom_chunks(part) for part in supposed_parts)
 
         resulting_chunks, current_chunk, chunk_is_positive, previous_grammars = [], [], True, None
         for chunk in supposed_parts:

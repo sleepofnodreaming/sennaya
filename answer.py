@@ -142,6 +142,17 @@ class SimpleAnswer(BaseAnswer):
         else:
             return [wd.strip().lower() for num, wd in enumerate(lemmas) if self._has_analysis[num]]
 
+    def grammars(self):
+        grs = [
+            wd["analysis"][0].get("gr", "") if self._has_analysis[num]
+            else ""
+            for num, wd in enumerate(self.full_data)
+            ]
+        if self.include_punctuation:
+            return [wd.strip() for num, wd in enumerate(grs) if not self._is_whitespace[num]]
+        else:
+            return [wd.strip() for num, wd in enumerate(grs) if self._has_analysis[num]]
+
 
 class FullSpellcheckAnswer(BaseAnswer):
 
@@ -174,6 +185,26 @@ class FullSpellcheckAnswer(BaseAnswer):
             return [wd.strip().lower() for num, wd in enumerate(lemmas) if not self._is_whitespace[num]]
         else:
             return [wd.strip().lower() for num, wd in enumerate(lemmas) if self._has_analysis[num]]
+
+    def grammars(self):
+        spellchecked_words = self.spellchecker(zip(self._raw_words, self._are_questionable))
+        analyses = [
+            self._mystem.analyze(wd)[:-1]
+            if self._has_analysis[num] and spellchecked_words[num] != self._raw_words[num]
+            else [self.full_data[num]]
+            for num, wd in enumerate(spellchecked_words)
+            ]
+        grammars = [
+            wd["analysis"][0].get("gr", "") if self._has_analysis[num]
+            else
+            ""
+            for num, wd in enumerate(itertools.chain(*analyses))
+            ]
+
+        if self.include_punctuation:
+            return [wd.strip() for num, wd in enumerate(grammars) if not self._is_whitespace[num]]
+        else:
+            return [wd.strip() for num, wd in enumerate(grammars) if self._has_analysis[num]]
 
 
 # class PartialSpellckeckAnswer(SimpleAnswer, FullSpellcheckAnswer):
