@@ -126,7 +126,8 @@ class TextAnswerProcessor(object):
                            answer_type,
                            syn_matcher,
                            ready_answers: dict,
-                           stop_after) -> bool:
+                           stop_after,
+                           writer) -> bool:
 
         sentences = TextAnswerProcessor.to_sentences(answer)
         logging.info("Split into sentences: %s -> %s", answer, sentences)
@@ -151,7 +152,7 @@ class TextAnswerProcessor(object):
                         logging.warning("Answer search stopped: {} in stop list.".format(result.text))
                         break
         if all_hypotheses:
-            for ans in all_hypotheses: print(ans)
+            for ans in all_hypotheses: writer.writerow([answer, ans])
             logging.info("Processing path (matched): {} -> {} -> {}".format(
                 answer,
                 ", ".join("{}({})".format(i[1], i[0]) for i in data_sources),
@@ -238,19 +239,24 @@ if __name__ == '__main__':
         ("full spellcheck", FullSpellcheckAnswer),
     ]
 
+    writer = csv.writer(sys.stdout, delimiter="\t", quoting=csv.QUOTE_MINIMAL)
+
     with open(parsed.unprocessed, "w") as unproc_file:
         for num, ans in read_columns(parsed.data_table, *colnums):
 
             logging.info("Start processing answer: '{}' (line {})".format(ans, num))
+            if ans in stops:
+                logging.info("Processing path (aborting directly): {}".format(ans))
+                continue
             direct_match = ready_answers.get(ans.lower()) or ready_answers.get(ans)
             if direct_match:
                 logging.info("Processing path (matched directly): {} -> {}".format(ans, direct_match))
-                print(direct_match)
+                writer.writerow([ans, direct_match])
                 continue
 
             for type_name, answer_type in ANSWER_TYPES:
                 logging.info("Try processing with %s, chunk: %s", type_name, type_name)
-                if TextAnswerProcessor.to_priority_answer(ans, answer_type, synonym_matcher, ready_answers, stops):
+                if TextAnswerProcessor.to_priority_answer(ans, answer_type, synonym_matcher, ready_answers, stops, writer):
                     break
             else:
                 print(ans, file=unproc_file)
