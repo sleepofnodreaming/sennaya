@@ -10,7 +10,7 @@ from collections import namedtuple, Counter
 
 from answer import Answer
 from readers import read_columns
-from rules.alexandrovsky import QUESTIONED, Postprocs
+from rules.alexandrovsky_places import QUESTIONED, POSTPROCESSING_SEQUENCE
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
@@ -64,14 +64,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    postproc_seq = [
-        Postprocs.no_change_postproc,
-        Postprocs.parking_postproc,
-        Postprocs.zoo_postproc,
-        Postprocs.bridge_processing,
-        Postprocs.traffic_processing,
-
-    ]
+    postproc_seq = POSTPROCESSING_SEQUENCE
 
     matches = {}
     regexes = {}

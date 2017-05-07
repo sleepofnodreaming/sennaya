@@ -164,7 +164,7 @@ class TextAnswerProcessor(object):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="A script producing statistics on respondents' likes and dislikes.")
-    parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike", "place"], help="'like' or 'dislike'")
+    parser.add_argument("like", metavar="STR", type=str, choices=["like", "dislike"], help="'like' or 'dislike'")
     parser.add_argument("data_table", metavar="PATH", type=str, help="path to a csv table containing the data")
     parser.add_argument("dictionaries", metavar="PATH", type=str, help="path to specific dictionaries")
 

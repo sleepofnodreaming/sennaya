@@ -8,10 +8,5 @@
     "concepts": "concepts_dislikes.csv",
     "categories": "dislikes.csv",
     "stop_markers": "stops.txt"
-  },
-  "place": {
-    "concepts": "places.csv",
-    "categories": "places_good_names.csv",
-    "stop_markers": "stops.txt"
   }
 }
