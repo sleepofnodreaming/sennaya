@@ -1,6 +1,7 @@
 #!/usr/local/bin/python3
 
 import csv
+import importlib
 import logging
 import os
 import re
@@ -10,7 +11,6 @@ from collections import namedtuple, Counter
 
 from answer import Answer
 from readers import read_columns
-from rules.alexandrovsky_places import QUESTIONED, POSTPROCESSING_SEQUENCE
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s', level=logging.INFO, stream=sys.stderr)
 
@@ -43,6 +43,12 @@ def parse_args():
     parser.add_argument("dic", type=str, metavar="PATH", help="a path to a dictionary to use")
     parser.add_argument("-d", "--delimiter", type=str, default="\t", metavar="SYMBOL",
                         help="a symbol to use as a delimiter in the output")
+    parser.add_argument("-p", "--postprocessing",
+                        type=str,
+                        choices=["default", "alexandrovsky.wishes"],
+                        default="default", metavar="MODULE_PATH",
+                        help="a name of a module to use as postprocessing")
+
     parser.add_argument(
         "-o", "--output", type=str, metavar="PATH",
         help="a path to a directory to put the results to (by default they're saved to a dir where the script's located)"
@@ -64,7 +70,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    postproc_seq = POSTPROCESSING_SEQUENCE
+    postprocessings = importlib.import_module("rules." + args.postprocessing + ".postprocessings")
 
     matches = {}
     regexes = {}
@@ -77,8 +83,7 @@ if __name__ == "__main__":
                     matches[kw] = hl
                     regexes[kw] = re.compile(r'\b{}\b'.format(kw), flags=re.I)
 
-    results = []
-    all_tags = []
+    results, all_tags = [], []
 
     for answer_instance in iter_column(args.csv, args.column):
         lemmas_text = answer_instance.get_lemmas(skip_punct=False, as_string=True).lower()
@@ -90,7 +95,7 @@ if __name__ == "__main__":
         if not hls:
             logging.info("Unprocessed: %s", lemmas_text)
 
-        for postproc in postproc_seq:
+        for postproc in postprocessings.POSTPROCESSING_SEQUENCE:
             postproc(answer_instance, hls)
 
         results.append((answer_instance.source, hls))
@@ -119,7 +124,7 @@ if __name__ == "__main__":
         for num, (answer, tags) in enumerate(results):
             if not tags or "?" in tags and len(tags) == 1:
                 active_writer = t_writer
-            elif tags & QUESTIONED:
+            elif tags & postprocessings.QUESTIONED:
                 active_writer = q_writer
             else:
                 active_writer = c_writer
