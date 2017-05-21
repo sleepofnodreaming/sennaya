@@ -45,7 +45,7 @@ def parse_args():
                         help="a symbol to use as a delimiter in the output")
     parser.add_argument("-p", "--postprocessing",
                         type=str,
-                        choices=["default", "alexandrovsky.wishes"],
+                        choices=["default", "alexandrovsky.wishes", "sennaya"],
                         default="default", metavar="MODULE_PATH",
                         help="a name of a module to use as postprocessing")
 
