@@ -83,7 +83,7 @@ def csv_to_lemmas(fn, column_number, skip_nonalpha=False, pattern=lambda a: a):
                 continue
             value = line[column_number]
             lemmas = pattern([i.strip() for i in ms.lemmatize(value) if i.strip()])
-            logging.info("%s -> %s", value, " ".join(lemmas))
+            logging.info("Lemmatization: %s -> %s", value, " ".join(lemmas))
             if skip_nonalpha:
                 lemmas = list(filter(lambda i: not re.search(r'^[\W]+$', i), lemmas))
             texts.append(lemmas)
