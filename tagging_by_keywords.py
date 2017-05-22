@@ -35,7 +35,15 @@ def generate_output_paths(directory=None):
     return OutputFiles(*names)
 
 
-def parse_args():
+def discover_rules(path):
+    absroot = os.path.dirname(os.path.realpath(__file__))
+    for root, dirs, files in os.walk(os.path.join(absroot, path)):
+        if "postprocessings.py" in files:
+            yield ".".join(root[len(absroot)+1+len(path)+1:].split("/"))
+
+
+def parse_args(rule_discovery_path):
+    rules = discover_rules(rule_discovery_path)
     import argparse
     parser = argparse.ArgumentParser(description="A script classifying respondents' answers using a dictionary.")
     parser.add_argument("csv", type=str, metavar="PATH", help="a path to a file to process")
@@ -45,7 +53,7 @@ def parse_args():
                         help="a symbol to use as a delimiter in the output")
     parser.add_argument("-p", "--postprocessing",
                         type=str,
-                        choices=["default", "alexandrovsky.wishes", "sennaya"],
+                        choices=list(rules),
                         default="default", metavar="MODULE_PATH",
                         help="a name of a module to use as postprocessing")
 
@@ -68,7 +76,7 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args = parse_args("rules")
 
     postprocessings = importlib.import_module("rules." + args.postprocessing + ".postprocessings")
 
